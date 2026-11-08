@@ -1,0 +1,22 @@
+name: Build
+
+# Builds men.rpx on every push to any branch and on demand (Actions tab -> Build -> Run workflow).
+# The file is attached to the run as the "men-rpx" artifact.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build men.rpx
+        run: |
+          docker build . -t builder
+          docker run --rm -v ${PWD}:/project builder make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: men-rpx
+          path: men.rpx
+          if-no-files-found: error
