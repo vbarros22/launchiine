@@ -573,11 +573,14 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     std::map<uint64_t, CachedName> freshNames;
     bool cacheChanged = false;
 
-    OSTime start      = OSGetTime();
-    OSTime nameTicks  = 0;
-    OSTime iconTicks  = 0;
-    uint32_t iconsOk  = 0;
+    OSTime start     = OSGetTime();
+    OSTime nameTicks = 0;
+    OSTime iconTicks = 0;
+    uint32_t iconsOk = 0;
+    uint32_t cached  = 0;
 
+    //! Pass 1: icons, around the visible page first. Reading a name through ACP costs
+    //! ~130 ms (80% of the loading time), so titles with a cached name skip it here.
     for (int32_t next = pickNextJob(); next >= 0; next = pickNextJob()) {
         if (stopAsyncLoading) {
             DEBUG_FUNCTION_LINE("Stop async title loading");
@@ -588,31 +591,60 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         PendingEvent event{PendingEvent::TITLE_UPDATED};
         event.info = job.info;
 
-        OSTime t0     = OSGetTime();
-        event.hasName = readTitleName(job.titleId, event.name, event.longName);
-        OSTime t1     = OSGetTime();
-        bool hasIcon    = readTitleIcon(job.titleId, job.metaDir, event.iconTga);
-        OSTime t2       = OSGetTime();
-        nameTicks += t1 - t0;
-        iconTicks += t2 - t1;
+        bool hasCachedName = job.cachedName != "<unknown>";
+        if (hasCachedName) {
+            cached++;
+        } else {
+            OSTime t0     = OSGetTime();
+            event.hasName = readTitleName(job.titleId, event.name, event.longName);
+            nameTicks += OSGetTime() - t0;
+            if (event.hasName) {
+                freshNames[job.titleId] = {event.name, event.longName};
+                cacheChanged            = true;
+            }
+        }
+
+        OSTime t1    = OSGetTime();
+        bool hasIcon = readTitleIcon(job.titleId, job.metaDir, event.iconTga);
+        iconTicks += OSGetTime() - t1;
         if (hasIcon) {
             iconsOk++;
         }
 
-        if (event.hasName) {
-            freshNames[job.titleId] = {event.name, event.longName};
-            if (event.name != job.cachedName || event.longName != job.cachedLongName) {
-                cacheChanged = true;
-            }
-        }
         if (event.hasName || hasIcon) {
             queueEvent(std::move(event));
         }
     }
 
-    DEBUG_FUNCTION_LINE("Loaded %d titles in %lld ms (names %lld ms, icons %lld ms), %u icons", (int) jobs.size(),
+    DEBUG_FUNCTION_LINE("Icons done: %d titles in %lld ms (names %lld ms, icons %lld ms), %u icons, %u cached names", (int) jobs.size(),
                         OSTicksToMilliseconds(OSGetTime() - start), OSTicksToMilliseconds(nameTicks),
-                        OSTicksToMilliseconds(iconTicks), iconsOk);
+                        OSTicksToMilliseconds(iconTicks), iconsOk, cached);
+
+    //! Pass 2: in the background, check the cached names (updates, console language change)
+    for (auto &job : jobs) {
+        if (job.cachedName == "<unknown>") {
+            continue; // read in pass 1
+        }
+        if (stopAsyncLoading) {
+            DEBUG_FUNCTION_LINE("Stop async name refresh");
+            return;
+        }
+        PendingEvent event{PendingEvent::TITLE_UPDATED};
+        event.info = job.info;
+        if (!readTitleName(job.titleId, event.name, event.longName)) {
+            //! keep the cached name, it is still the best we have
+            freshNames[job.titleId] = {job.cachedName, job.cachedLongName};
+            continue;
+        }
+        freshNames[job.titleId] = {event.name, event.longName};
+        if (event.name != job.cachedName || event.longName != job.cachedLongName) {
+            DEBUG_FUNCTION_LINE("%016llX renamed to \"%s\"", job.titleId, event.name.c_str());
+            cacheChanged  = true;
+            event.hasName = true;
+            queueEvent(std::move(event));
+        }
+    }
+    DEBUG_FUNCTION_LINE("Names refreshed after %lld ms", OSTicksToMilliseconds(OSGetTime() - start));
 
     //! also rewrite when titles were removed
     if (cacheChanged || freshNames.size() != jobs.size()) {
