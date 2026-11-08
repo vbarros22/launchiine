@@ -2,6 +2,7 @@
 #define GAME_LIST_H_
 
 #include <atomic>
+#include <deque>
 #include <coreinit/cache.h>
 #include <coreinit/mcp.h>
 #include <gui/GuiImageData.h>
@@ -115,7 +116,10 @@ protected:
         std::string name        = "";
         std::string longName    = "";
         bool hasName            = false;
-        GuiImageData *imageData = nullptr;
+        //! Sanitized TGA. The texture is created from it on the render thread: creating a
+        //! GuiImageData calls GX2Invalidate, which writes into the GX2 command buffer and must
+        //! never run concurrently with rendering (that hung the GPU at random icons).
+        std::vector<uint8_t> iconTga{};
     };
 
     int32_t readGameList();
@@ -130,6 +134,9 @@ protected:
 
     std::mutex pendingLock;
     std::vector<PendingEvent> pendingEvents;
+
+    //! render thread only: events taken from pendingEvents but not applied yet
+    std::deque<PendingEvent> renderQueue;
 
     std::atomic<bool> stopAsyncLoading{false};
     //! no std::atomic<uint64_t>: 64 bit atomics need libatomic on the 32 bit PowerPC

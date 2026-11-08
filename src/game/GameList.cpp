@@ -270,13 +270,14 @@ namespace {
         return true;
     }
 
-    GuiImageData *readTitleIcon(uint64_t titleId, const std::string &gamePath) {
+    //! Loader thread: reads and sanitizes the icon. No GX2 calls here.
+    bool readTitleIcon(uint64_t titleId, const std::string &gamePath, std::vector<uint8_t> &outTga) {
         std::string filepath = "fs:" + gamePath + META_PATH + "/iconTex.tga";
         uint8_t *buffer      = nullptr;
         uint32_t bufferSize  = 0;
         if (FSUtils::LoadFileToMem(filepath.c_str(), &buffer, &bufferSize) <= 0 || buffer == nullptr) {
             DEBUG_FUNCTION_LINE("%016llX: no icon file", titleId);
-            return nullptr;
+            return false;
         }
 
         DEBUG_FUNCTION_LINE("%016llX: icon %u bytes, type %u, %ux%u, %u bpp, free MEM2 %u KiB", titleId, bufferSize,
@@ -286,21 +287,14 @@ namespace {
                             bufferSize >= 18 ? buffer[16] : 0,
                             MEMGetTotalFreeSizeForExpHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM2)) / 1024);
 
-        std::vector<uint8_t> clean;
-        bool valid = sanitizeTga(buffer, bufferSize, clean);
+        bool valid = sanitizeTga(buffer, bufferSize, outTga);
         free(buffer);
         if (!valid) {
             DEBUG_FUNCTION_LINE("%016llX: unsupported or broken icon, skipped", titleId);
-            return nullptr;
+            outTga.clear();
+            return false;
         }
-
-        auto *imageData = new GuiImageData(clean.data(), clean.size(), GX2_TEX_CLAMP_MODE_MIRROR);
-        if (imageData->getTexture() == nullptr) {
-            DEBUG_FUNCTION_LINE("%016llX: decoding failed (out of memory?)", titleId);
-            delete imageData;
-            return nullptr;
-        }
-        return imageData;
+        return true;
     }
 } // namespace
 
@@ -311,11 +305,9 @@ GameList::~GameList() {
     stopAsyncLoading = true;
 
     pendingLock.lock();
-    for (auto &event : pendingEvents) {
-        delete event.imageData;
-    }
     pendingEvents.clear();
     pendingLock.unlock();
+    renderQueue.clear();
 
     clear();
 }
@@ -357,12 +349,23 @@ void GameList::queueEvent(PendingEvent &&event) {
 }
 
 void GameList::pollEvents() {
-    std::vector<PendingEvent> events;
     pendingLock.lock();
-    events.swap(pendingEvents);
+    for (auto &event : pendingEvents) {
+        renderQueue.push_back(std::move(event));
+    }
+    pendingEvents.clear();
     pendingLock.unlock();
 
-    for (auto &event : events) {
+    //! Creating a texture costs a few ms (decode + convert), limit it per frame
+    constexpr int MAX_TEXTURES_PER_FRAME = 3;
+    int texturesCreated                  = 0;
+
+    while (!renderQueue.empty()) {
+        PendingEvent &event = renderQueue.front();
+        if (!event.iconTga.empty() && texturesCreated >= MAX_TEXTURES_PER_FRAME) {
+            break; // next frame
+        }
+
         switch (event.type) {
             case PendingEvent::LIST_CHANGED:
                 titleListChanged(this);
@@ -373,19 +376,23 @@ void GameList::pollEvents() {
                     info->name     = event.name;
                     info->longName = event.longName;
                 }
-                if (event.imageData != nullptr) {
+                if (!event.iconTga.empty()) {
+                    texturesCreated++;
                     if (info->imageData == nullptr) {
-                        info->imageData = event.imageData;
-                    } else {
-                        // should not happen, but never leak or replace a texture that might be drawn
-                        delete event.imageData;
+                        auto *imageData = new GuiImageData(event.iconTga.data(), event.iconTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
+                        if (imageData->getTexture() != nullptr) {
+                            info->imageData = imageData;
+                        } else {
+                            DEBUG_FUNCTION_LINE("%016llX: creating the texture failed", info->titleId);
+                            delete imageData;
+                        }
                     }
-                    event.imageData = nullptr;
                 }
                 titleUpdated(info);
                 break;
             }
         }
+        renderQueue.pop_front();
     }
 }
 
@@ -559,11 +566,11 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         OSTime t0     = OSGetTime();
         event.hasName = readTitleName(job.titleId, event.name, event.longName);
         OSTime t1     = OSGetTime();
-        event.imageData = readTitleIcon(job.titleId, job.gamePath);
+        bool hasIcon    = readTitleIcon(job.titleId, job.gamePath, event.iconTga);
         OSTime t2       = OSGetTime();
         nameTicks += t1 - t0;
         iconTicks += t2 - t1;
-        if (event.imageData) {
+        if (hasIcon) {
             iconsOk++;
         }
 
@@ -573,7 +580,7 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
                 cacheChanged = true;
             }
         }
-        if (event.hasName || event.imageData != nullptr) {
+        if (event.hasName || hasIcon) {
             queueEvent(std::move(event));
         }
     }
