@@ -423,15 +423,24 @@ void MainWindow::OnCloseEffectFinish(GuiElement *element) {
 }
 
 void MainWindow::OnSettingsButtonClicked(GuiElement *element) {
-    if (launchInProgress) {
+    //! _SYSLaunchSettings() blocks forever when called from the menu. Launch the System
+    //! Settings title the same way as tapping its icon instead.
+    uint64_t settingsTitleId = 0;
+    gameList.lock();
+    for (auto *info : gameList.getFullGameList()) {
+        if (info->appType == MCP_APP_TYPE_SYSTEM_SETTINGS) {
+            settingsTitleId = info->titleId;
+            break;
+        }
+    }
+    gameList.unlock();
+
+    if (settingsTitleId == 0) {
+        DEBUG_FUNCTION_LINE("System Settings not found");
         return;
     }
-    DEBUG_FUNCTION_LINE("Open System Settings");
-    launchInProgress = true;
-    stopTitleLoader();
-    saveLastTitle(currentDrcFrame ? currentDrcFrame->getSelectedGame() : 0);
-    //! the system switches to System Settings once we exit, ProcUI tells us to do so
-    _SYSLaunchSettings();
+    DEBUG_FUNCTION_LINE("Open System Settings %016llX", settingsTitleId);
+    OnGameLaunchSplashScreen(nullptr, settingsTitleId);
 }
 
 void MainWindow::OnGameSelectionChange(GuiTitleBrowser *element, uint64_t selectedIdx) {
@@ -555,7 +564,10 @@ bool MainWindow::OnGameLaunch(uint64_t titleId) {
         //! IPC from the loader thread while the system switches titles can hang the exit,
         //! so stop it first. This takes at most the time to load one icon.
         stopTitleLoader();
-        saveLastTitle(titleId);
+        //! remember games (00050000xxxxxxxx), not system titles like System Settings
+        if ((titleId >> 32) == 0x00050000) {
+            saveLastTitle(titleId);
+        }
         ACPAssignTitlePatch(&titleInfo);
         DEBUG_FUNCTION_LINE("Launching %016llX", titleId);
         _SYSLaunchTitleWithStdArgsInNoSplash(titleId, nullptr);

@@ -275,22 +275,39 @@ void GameList::loadTitleDetails() {
     }
     unlock();
 
+    //! Pass 1: names only. Cheap compared to decoding icons, and it makes search work
+    //! for every title as early as possible.
     for (auto &job : jobs) {
         if (stopAsyncLoading) {
-            DEBUG_FUNCTION_LINE("Stop async title loading");
-            break;
+            DEBUG_FUNCTION_LINE("Stop async title loading (names)");
+            return;
         }
-
         PendingEvent event{PendingEvent::TITLE_UPDATED};
-        event.info      = job.info;
-        event.hasName   = readTitleName(job.titleId, event.name);
-        event.imageData = readTitleIcon(job.gamePath);
-        DEBUG_FUNCTION_LINE("%016llX \"%s\" icon=%d", job.titleId, event.hasName ? event.name.c_str() : "?", event.imageData != nullptr);
-
-        if (event.hasName || event.imageData != nullptr) {
+        event.info    = job.info;
+        event.hasName = readTitleName(job.titleId, event.name);
+        DEBUG_FUNCTION_LINE("%016llX \"%s\"", job.titleId, event.hasName ? event.name.c_str() : "?");
+        if (event.hasName) {
             queueEvent(std::move(event));
         }
     }
+    DEBUG_FUNCTION_LINE("All names loaded");
+
+    //! Pass 2: icons, in list order so the first pages fill up first.
+    for (auto &job : jobs) {
+        if (stopAsyncLoading) {
+            DEBUG_FUNCTION_LINE("Stop async title loading (icons)");
+            return;
+        }
+        PendingEvent event{PendingEvent::TITLE_UPDATED};
+        event.info      = job.info;
+        event.imageData = readTitleIcon(job.gamePath);
+        if (event.imageData != nullptr) {
+            queueEvent(std::move(event));
+        } else {
+            DEBUG_FUNCTION_LINE("%016llX has no icon", job.titleId);
+        }
+    }
+    DEBUG_FUNCTION_LINE("All icons loaded");
 }
 
 int32_t GameList::load() {
