@@ -505,12 +505,12 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     //! page, ...). The focus follows the selection, so flipping pages while loading moves
     //! the loader along. Jobs are in list order, which is the order of the icons.
     constexpr int32_t ICONS_PER_PAGE = 15;
-    if (focusTitle == 0) {
-        focusTitle = priorityTitleId;
+    if (getFocusTitle() == 0) {
+        setFocusTitle(priorityTitleId);
     }
     std::vector<bool> doneJob(jobs.size(), false);
     auto pickNextJob = [&]() -> int32_t {
-        uint64_t focus     = focusTitle;
+        uint64_t focus     = getFocusTitle();
         int32_t focusIndex = 0;
         for (size_t i = 0; i < jobs.size(); i++) {
             if (jobs[i].titleId == focus) {

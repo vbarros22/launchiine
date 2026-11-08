@@ -84,7 +84,13 @@ public:
 
     //! The loader prefers titles close to this one (the selection), any thread.
     void setFocusTitle(uint64_t titleId) {
+        std::lock_guard<std::mutex> guard(focusLock);
         focusTitle = titleId;
+    }
+
+    uint64_t getFocusTitle() {
+        std::lock_guard<std::mutex> guard(focusLock);
+        return focusTitle;
     }
 
     sigslot::signal1<GameList *> titleListChanged;
@@ -126,7 +132,9 @@ protected:
     std::vector<PendingEvent> pendingEvents;
 
     std::atomic<bool> stopAsyncLoading{false};
-    std::atomic<uint64_t> focusTitle{0};
+    //! no std::atomic<uint64_t>: 64 bit atomics need libatomic on the 32 bit PowerPC
+    std::mutex focusLock;
+    uint64_t focusTitle = 0;
 };
 
 #endif
