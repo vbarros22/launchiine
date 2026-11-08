@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <coreinit/cache.h>
 #include <coreinit/mcp.h>
+#include <coreinit/memexpheap.h>
+#include <coreinit/memheap.h>
 #include <coreinit/userconfig.h>
 #include <malloc.h>
 #include <nn/acp/nn_acp_types.h>
@@ -77,16 +79,139 @@ namespace {
         return result;
     }
 
-    GuiImageData *readTitleIcon(const std::string &gamePath) {
+    //! Re-encodes any TGA (uncompressed or RLE, 24/32 bit, any origin) as a plain
+    //! uncompressed 32 bit TGA with every read bounds checked. libgd's TGA reader (the one
+    //! libgui uses) can crash or hang on RLE or unusual files, so it only ever sees the
+    //! simple case. Returns false for files that are not valid icons.
+    bool sanitizeTga(const uint8_t *in, uint32_t inSize, std::vector<uint8_t> &out) {
+        if (in == nullptr || inSize < 18) {
+            return false;
+        }
+        uint32_t idLength     = in[0];
+        uint32_t colorMapType = in[1];
+        uint32_t imageType    = in[2];
+        uint32_t cmapLength   = in[5] | (in[6] << 8);
+        uint32_t cmapEntryBit = in[7];
+        uint32_t width        = in[12] | (in[13] << 8);
+        uint32_t height       = in[14] | (in[15] << 8);
+        uint32_t bpp          = in[16];
+        uint32_t descriptor   = in[17];
+
+        if (imageType != 2 && imageType != 10) {
+            return false; // only true color, raw or RLE
+        }
+        if (bpp != 24 && bpp != 32) {
+            return false;
+        }
+        if (width == 0 || height == 0 || width > 1024 || height > 1024) {
+            return false;
+        }
+
+        uint32_t offset = 18 + idLength;
+        if (colorMapType == 1) {
+            offset += cmapLength * ((cmapEntryBit + 7) / 8);
+        }
+        if (offset > inSize) {
+            return false;
+        }
+
+        const uint32_t srcBytes   = bpp / 8;
+        const uint32_t pixelCount = width * height;
+
+        out.assign(18 + pixelCount * 4, 0);
+        uint8_t *hdr = out.data();
+        hdr[2]       = 2; // uncompressed true color
+        hdr[12]      = width & 0xFF;
+        hdr[13]      = width >> 8;
+        hdr[14]      = height & 0xFF;
+        hdr[15]      = height >> 8;
+        hdr[16]      = 32;
+        hdr[17]      = (descriptor & 0x30) | 8; // keep the origin, 8 alpha bits
+
+        uint8_t *dst   = out.data() + 18;
+        auto putPixel  = [&](const uint8_t *src) {
+            dst[0] = src[0]; // B
+            dst[1] = src[1]; // G
+            dst[2] = src[2]; // R
+            dst[3] = srcBytes == 4 ? src[3] : 0xFF;
+            dst += 4;
+        };
+
+        uint32_t pos  = offset;
+        uint32_t done = 0;
+        if (imageType == 2) {
+            if (pos + pixelCount * srcBytes > inSize) {
+                return false;
+            }
+            for (; done < pixelCount; done++) {
+                putPixel(in + pos);
+                pos += srcBytes;
+            }
+            return true;
+        }
+
+        while (done < pixelCount) {
+            if (pos >= inSize) {
+                return false;
+            }
+            uint8_t packet = in[pos++];
+            uint32_t count = (packet & 0x7F) + 1;
+            if (count > pixelCount - done) {
+                return false;
+            }
+            if (packet & 0x80) {
+                if (pos + srcBytes > inSize) {
+                    return false;
+                }
+                for (uint32_t i = 0; i < count; i++) {
+                    putPixel(in + pos);
+                }
+                pos += srcBytes;
+            } else {
+                if (pos + count * srcBytes > inSize) {
+                    return false;
+                }
+                for (uint32_t i = 0; i < count; i++) {
+                    putPixel(in + pos);
+                    pos += srcBytes;
+                }
+            }
+            done += count;
+        }
+        return true;
+    }
+
+    GuiImageData *readTitleIcon(uint64_t titleId, const std::string &gamePath) {
         std::string filepath = "fs:" + gamePath + META_PATH + "/iconTex.tga";
         uint8_t *buffer      = nullptr;
         uint32_t bufferSize  = 0;
         if (FSUtils::LoadFileToMem(filepath.c_str(), &buffer, &bufferSize) <= 0 || buffer == nullptr) {
+            DEBUG_FUNCTION_LINE("%016llX: no icon file", titleId);
             return nullptr;
         }
-        auto *imageData = new GuiImageData(buffer, bufferSize, GX2_TEX_CLAMP_MODE_MIRROR);
-        //! free original image buffer which is converted to texture now and not needed anymore
+
+        DEBUG_FUNCTION_LINE("%016llX: icon %u bytes, type %u, %ux%u, %u bpp, free MEM2 %u KiB", titleId, bufferSize,
+                            bufferSize >= 18 ? buffer[2] : 0,
+                            bufferSize >= 18 ? (buffer[12] | (buffer[13] << 8)) : 0,
+                            bufferSize >= 18 ? (buffer[14] | (buffer[15] << 8)) : 0,
+                            bufferSize >= 18 ? buffer[16] : 0,
+                            MEMGetTotalFreeSizeForExpHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM2)) / 1024);
+
+        std::vector<uint8_t> clean;
+        bool valid = sanitizeTga(buffer, bufferSize, clean);
         free(buffer);
+        if (!valid) {
+            DEBUG_FUNCTION_LINE("%016llX: unsupported or broken icon, skipped", titleId);
+            return nullptr;
+        }
+
+        auto *imageData = new GuiImageData(clean.data(), clean.size(), GX2_TEX_CLAMP_MODE_MIRROR);
+        if (imageData->getTexture() == nullptr) {
+            DEBUG_FUNCTION_LINE("%016llX: decoding failed (out of memory?)", titleId);
+            delete imageData;
+            return nullptr;
+        }
+        DEBUG_FUNCTION_LINE("%016llX: icon ok", titleId);
         return imageData;
     }
 } // namespace
@@ -300,11 +425,9 @@ void GameList::loadTitleDetails() {
         }
         PendingEvent event{PendingEvent::TITLE_UPDATED};
         event.info      = job.info;
-        event.imageData = readTitleIcon(job.gamePath);
+        event.imageData = readTitleIcon(job.titleId, job.gamePath);
         if (event.imageData != nullptr) {
             queueEvent(std::move(event));
-        } else {
-            DEBUG_FUNCTION_LINE("%016llX has no icon", job.titleId);
         }
     }
     DEBUG_FUNCTION_LINE("All icons loaded");
