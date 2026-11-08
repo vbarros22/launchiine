@@ -56,9 +56,13 @@ private:
 
     uint64_t firstTitleInLayout();
 
+    //! scroll by whole pages and take the selection along
+    void changePage(int32_t delta);
+
     bool matchesFilter(const gameInfo *info) const;
 
     std::string filterText;
+    std::vector<std::string> filterWords;
 
     static const int32_t MAX_ROWS = 3;
     static const int32_t MAX_COLS = 5;

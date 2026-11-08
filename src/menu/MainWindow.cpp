@@ -23,8 +23,12 @@
 #include "gui/GuiIconGrid.h"
 #include "gui/GuiTitleBrowser.h"
 #include "resources/Resources.h"
+#include "fs/FSUtils.h"
 #include "utils/AsyncExecutor.h"
 #include <coreinit/title.h>
+#include <cinttypes>
+#include <cstdio>
+#include <malloc.h>
 #include <future>
 #include <nn/acp/title.h>
 #include <sysapp/launch.h>
@@ -42,10 +46,51 @@ MainWindow::MainWindow(int32_t w, int32_t h)
     gameList.titleListChanged.connect(this, &MainWindow::OnGameTitleListChanged);
     gameList.titleUpdated.connect(this, &MainWindow::OnGameTitleUpdated);
     gameList.titleAdded.connect(this, &MainWindow::OnGameTitleAdded);
-    AsyncExecutor::execute([&] { gameList.load(); });
+    //! own thread (not the AsyncExecutor) so we can stop and join it before launching a title
+    titleLoader = std::async(std::launch::async, [this] { gameList.load(); });
+}
+
+namespace {
+    constexpr const char *SETTINGS_DIR    = "fs:/vol/external01/wiiu/launchiine";
+    constexpr const char *LAST_TITLE_FILE = "fs:/vol/external01/wiiu/launchiine/lastTitle.txt";
+} // namespace
+
+uint64_t MainWindow::loadLastTitle() {
+    uint8_t *buffer = nullptr;
+    uint32_t size   = 0;
+    if (FSUtils::LoadFileToMem(LAST_TITLE_FILE, &buffer, &size) <= 0 || buffer == nullptr) {
+        return 0;
+    }
+    std::string text((const char *) buffer, size);
+    free(buffer);
+    uint64_t titleId = strtoull(text.c_str(), nullptr, 16);
+    DEBUG_FUNCTION_LINE("Last title: %016llX", titleId);
+    return titleId;
+}
+
+void MainWindow::saveLastTitle(uint64_t titleId) {
+    if (titleId == 0) {
+        return;
+    }
+    FSUtils::CreateSubfolder(SETTINGS_DIR);
+    char text[32];
+    int len = snprintf(text, sizeof(text), "%016" PRIX64 "\n", titleId);
+    if (FSUtils::saveBufferToFile(LAST_TITLE_FILE, text, len) != len) {
+        DEBUG_FUNCTION_LINE("Failed to save last title");
+    }
+}
+
+void MainWindow::stopTitleLoader() {
+    gameList.stopLoading();
+    if (titleLoader.valid()) {
+        DEBUG_FUNCTION_LINE("Waiting for the title loader to stop");
+        titleLoader.wait();
+        DEBUG_FUNCTION_LINE("Title loader stopped");
+    }
 }
 
 MainWindow::~MainWindow() {
+    stopTitleLoader();
     gameList.titleListChanged.disconnect(this);
     gameList.titleUpdated.disconnect(this);
     gameList.titleAdded.disconnect(this);
@@ -241,7 +286,10 @@ void MainWindow::drawTv(CVideo *video) {
 }
 
 void MainWindow::SetupMainView() {
-    currentTvFrame = new GuiIconGrid(width, height, 0, true);
+    //! start on the title that was launched last
+    uint64_t lastTitle = loadLastTitle();
+
+    currentTvFrame = new GuiIconGrid(width, height, lastTitle, true);
 
     currentTvFrame->setEffect(EFFECT_FADE, 10, 255);
     currentTvFrame->setState(GuiElement::STATE_DISABLED);
@@ -249,7 +297,7 @@ void MainWindow::SetupMainView() {
 
     appendTv(currentTvFrame);
 
-    currentDrcFrame = new GuiIconGrid(width, height, 0, false);
+    currentDrcFrame = new GuiIconGrid(width, height, lastTitle, false);
     currentDrcFrame->setEffect(EFFECT_FADE, 10, 255);
     currentDrcFrame->setState(GuiElement::STATE_DISABLED);
     currentDrcFrame->effectFinished.connect(this, &MainWindow::OnOpenEffectFinish);
@@ -375,6 +423,15 @@ void MainWindow::OnCloseEffectFinish(GuiElement *element) {
 }
 
 void MainWindow::OnSettingsButtonClicked(GuiElement *element) {
+    if (launchInProgress) {
+        return;
+    }
+    DEBUG_FUNCTION_LINE("Open System Settings");
+    launchInProgress = true;
+    stopTitleLoader();
+    saveLastTitle(currentDrcFrame ? currentDrcFrame->getSelectedGame() : 0);
+    //! the system switches to System Settings once we exit, ProcUI tells us to do so
+    _SYSLaunchSettings();
 }
 
 void MainWindow::OnGameSelectionChange(GuiTitleBrowser *element, uint64_t selectedIdx) {
@@ -495,7 +552,12 @@ bool MainWindow::OnGameLaunch(uint64_t titleId) {
     auto err       = MCP_GetTitleInfo(handle, titleId, &titleInfo);
     MCP_Close(handle);
     if (err == 0) {
+        //! IPC from the loader thread while the system switches titles can hang the exit,
+        //! so stop it first. This takes at most the time to load one icon.
+        stopTitleLoader();
+        saveLastTitle(titleId);
         ACPAssignTitlePatch(&titleInfo);
+        DEBUG_FUNCTION_LINE("Launching %016llX", titleId);
         _SYSLaunchTitleWithStdArgsInNoSplash(titleId, nullptr);
         return true;
     }

@@ -67,8 +67,14 @@ public:
         return fullGameList;
     }
 
-    //! Worker thread only.
+    //! Worker thread only. Returns early once stopLoading() was called.
     int32_t load();
+
+    //! Ask a running load() to stop after the current title. The caller has to wait for
+    //! load() to return (MainWindow keeps the future of the loader thread).
+    void stopLoading() {
+        stopAsyncLoading = true;
+    }
 
     //! Render thread only.
     void pollEvents();
@@ -111,7 +117,6 @@ protected:
     std::vector<PendingEvent> pendingEvents;
 
     std::atomic<bool> stopAsyncLoading{false};
-    std::atomic<int32_t> runningLoaders{0};
 };
 
 #endif

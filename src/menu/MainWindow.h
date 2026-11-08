@@ -22,6 +22,7 @@
 #include "game/GameList.h"
 #include "gui/GuiTitleBrowser.h"
 #include <gui/Gui.h>
+#include <future>
 #include <queue>
 #include <vector>
 
@@ -134,7 +135,14 @@ private:
 
     void OnCloseEffectFinish(GuiElement *element);
 
-    static bool OnGameLaunch(uint64_t titleId);
+    bool OnGameLaunch(uint64_t titleId);
+
+    //! stop the background title loader and wait for it, must happen before we leave the foreground for good
+    void stopTitleLoader();
+
+    static uint64_t loadLastTitle();
+
+    static void saveLastTitle(uint64_t titleId);
 
     void OnGameLaunchSplashScreenFinished(GuiElement *element, gameInfo *info, bool launchGame);
 
@@ -172,6 +180,7 @@ private:
     bool pointerValid[4];
 
     GameList gameList;
+    std::future<void> titleLoader;
 
     std::recursive_mutex guiMutex;
     KeyboardHelper *keyboardInstance = nullptr;

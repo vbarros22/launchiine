@@ -7,7 +7,6 @@
 #include <nn/acp/title.h>
 #include <string.h>
 #include <string>
-#include <thread>
 
 #include "GameList.h"
 #include "common/common.h"
@@ -95,11 +94,8 @@ namespace {
 GameList::GameList() = default;
 
 GameList::~GameList() {
+    //! MainWindow has already stopped and joined the loader at this point
     stopAsyncLoading = true;
-    //! the loader holds a pointer to us, wait until it has noticed the stop request
-    while (runningLoaders > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
 
     pendingLock.lock();
     for (auto &event : pendingEvents) {
@@ -289,6 +285,7 @@ void GameList::loadTitleDetails() {
         event.info      = job.info;
         event.hasName   = readTitleName(job.titleId, event.name);
         event.imageData = readTitleIcon(job.gamePath);
+        DEBUG_FUNCTION_LINE("%016llX \"%s\" icon=%d", job.titleId, event.hasName ? event.name.c_str() : "?", event.imageData != nullptr);
 
         if (event.hasName || event.imageData != nullptr) {
             queueEvent(std::move(event));
@@ -297,7 +294,6 @@ void GameList::loadTitleDetails() {
 }
 
 int32_t GameList::load() {
-    runningLoaders++;
     int32_t res = 0;
     if (!stopAsyncLoading) {
         lock();
@@ -310,6 +306,6 @@ int32_t GameList::load() {
         res = size();
         loadTitleDetails();
     }
-    runningLoaders--;
+    DEBUG_FUNCTION_LINE("Title loader finished (%d titles, stopped=%d)", res, (int) stopAsyncLoading);
     return res;
 }

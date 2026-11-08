@@ -42,10 +42,11 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
       emptyIcon(Resources::GetFile("iconEmpty.png"), Resources::GetFileSize("iconEmpty.png"), GX2_TEX_CLAMP_MODE_MIRROR), dragListener(w, h) {
 
     particleBgImage.setParent(this);
+    //! GameIndex is the title id to select once the list is loaded
     setSelectedGame(GameIndex);
-    listOffset          = selectedGame / (MAX_COLS * MAX_ROWS);
-    targetLeftPosition  = -listOffset * getWidth();
-    currentLeftPosition = targetLeftPosition;
+    listOffset          = 0;
+    targetLeftPosition  = 0;
+    currentLeftPosition = 0;
 
     leftButton.setTrigger(&leftTrigger);
     leftButton.clicked.connect(this, &GuiIconGrid::OnLeftClick);
@@ -158,24 +159,85 @@ int32_t GuiIconGrid::offsetForTitleId(uint64_t titleId) {
     return -1;
 }
 
-static std::string toLowerAscii(const std::string &in) {
-    std::string out = in;
-    for (auto &c : out) {
+//! Lower case, strip accents of Latin-1 letters (é -> e, ç -> c), and turn punctuation and
+//! whitespace into single spaces. "The Legend of Zelda: Breath" -> " the legend of zelda breath "
+static std::string normalizeForSearch(const std::string &in) {
+    static const char latin1Fold[64 + 1] =
+            "aaaaaaaceeeeiiii"  // C0-CF
+            "dnooooo*ouuuuyts"  // D0-DF
+            "aaaaaaaceeeeiiii"  // E0-EF
+            "dnooooo/ouuuuyty"; // F0-FF
+    std::string out = " ";
+    for (size_t i = 0; i < in.size(); i++) {
+        auto c   = (unsigned char) in[i];
+        char add = 0;
         if (c >= 'A' && c <= 'Z') {
-            c = c - 'A' + 'a';
+            add = (char) (c - 'A' + 'a');
+        } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            add = (char) c;
+        } else if (c == 0xC3 && i + 1 < in.size()) {
+            //! UTF-8 for U+00C0..U+00FF
+            auto next = (unsigned char) in[i + 1];
+            if (next >= 0x80 && next <= 0xBF) {
+                add = latin1Fold[(next - 0x80) + 0x00];
+                if (add == '*' || add == '/') {
+                    add = ' ';
+                }
+                i++;
+            }
+        } else if (c >= 0x80) {
+            //! other non ASCII (Japanese, symbols like ™): keep as is so it can still match
+            out += (char) c;
+            continue;
         }
+        if (add == 0) {
+            add = ' ';
+        }
+        if (add == ' ' && out.back() == ' ') {
+            continue;
+        }
+        out += add;
+    }
+    if (out.back() != ' ') {
+        out += ' ';
     }
     return out;
 }
 
+static std::vector<std::string> splitWords(const std::string &normalized) {
+    std::vector<std::string> words;
+    std::string current;
+    for (char c : normalized) {
+        if (c == ' ') {
+            if (!current.empty()) {
+                words.push_back(current);
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+    if (!current.empty()) {
+        words.push_back(current);
+    }
+    return words;
+}
+
 bool GuiIconGrid::matchesFilter(const gameInfo *info) const {
-    if (filterText.empty()) {
+    if (filterWords.empty()) {
         return true;
     }
     if (info == nullptr) {
         return false;
     }
-    return toLowerAscii(info->name).find(filterText) != std::string::npos;
+    //! every typed word has to show up somewhere in the name, in any order
+    std::string name = normalizeForSearch(info->name);
+    for (auto &word : filterWords) {
+        if (name.find(word) == std::string::npos) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::vector<uint64_t> GuiIconGrid::currentLayout() {
@@ -208,11 +270,16 @@ uint64_t GuiIconGrid::firstTitleInLayout() {
 }
 
 void GuiIconGrid::setFilter(const std::string &filter) {
-    std::string newFilter = toLowerAscii(filter);
+    std::string newFilter = normalizeForSearch(filter);
+    if (newFilter == " ") {
+        newFilter.clear();
+    }
     if (newFilter == filterText) {
         return;
     }
-    filterText = newFilter;
+    filterText  = newFilter;
+    filterWords = splitWords(newFilter);
+    DEBUG_FUNCTION_LINE("Filter words: %d", (int) filterWords.size());
 
     curPage          = 0;
     bUpdatePositions = true;
@@ -311,21 +378,62 @@ void GuiIconGrid::OnGameTitleListUpdated(GameList *gameList) {
     }
     setSelectedGame(newSelection);
     gameSelectionChanged(this, selectedGame);
-    curPage             = 0;
-    currentLeftPosition = 0;
+
+    //! show the page of the selected title right away, without scrolling there
+    int32_t offset      = offsetForTitleId(selectedGame);
+    curPage             = offset >= 0 ? offset / (MAX_COLS * MAX_ROWS) : 0;
+    targetLeftPosition  = -curPage * getWidth();
+    currentLeftPosition = targetLeftPosition;
     bUpdatePositions    = true;
 }
 
-void GuiIconGrid::OnLeftArrowClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
-    //setSelectedGame(0);
-    curPage--;
+void GuiIconGrid::changePage(int32_t delta) {
+    const int32_t perPage = MAX_COLS * MAX_ROWS;
+    auto layout           = currentLayout();
+
+    //! last page that holds at least one title
+    int32_t lastPage = 0;
+    for (int32_t i = (int32_t) layout.size() - 1; i >= 0; i--) {
+        if (layout[i] != 0) {
+            lastPage = i / perPage;
+            break;
+        }
+    }
+
+    int32_t newPage = curPage + delta;
+    if (newPage < 0 || newPage > lastPage) {
+        return;
+    }
+
+    //! keep the selection in the same slot (row/column) on the new page. If that slot is
+    //! empty, take the closest title before it, then after it.
+    int32_t offset = offsetForTitleId(selectedGame);
+    int32_t slot   = offset >= 0 ? offset % perPage : 0;
+    int32_t start  = newPage * perPage;
+    int32_t end    = std::min<int32_t>(start + perPage, layout.size());
+
+    uint64_t newSelection = 0;
+    for (int32_t i = std::min(start + slot, end - 1); i >= start && newSelection == 0; i--) {
+        newSelection = layout[i];
+    }
+    for (int32_t i = start + slot + 1; i < end && newSelection == 0; i++) {
+        newSelection = layout[i];
+    }
+
+    curPage          = newPage;
     bUpdatePositions = true;
+    if (newSelection != 0) {
+        setSelectedGame(newSelection);
+        gameSelectionChanged(this, selectedGame);
+    }
+}
+
+void GuiIconGrid::OnLeftArrowClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    changePage(-1);
 }
 
 void GuiIconGrid::OnRightArrowClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
-    //setSelectedGame(0);
-    curPage++;
-    bUpdatePositions = true;
+    changePage(1);
 }
 
 void GuiIconGrid::OnLeftClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
