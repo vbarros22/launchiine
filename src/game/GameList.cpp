@@ -57,7 +57,7 @@ namespace {
         return std::string(str, strnlen(str, maxLen));
     }
 
-    bool readTitleName(uint64_t titleId, std::string &outName, std::string &outLongName) {
+    bool readTitleName(uint64_t titleId, std::string &outName, std::string &outLongName, std::string &outProductCode) {
         auto *meta = (ACPMetaXml *) memalign(0x40, META_XML_BUFFER_SIZE);
         if (!meta) {
             return false;
@@ -96,7 +96,8 @@ namespace {
             if (longName[0] == '\0') {
                 longName = meta->longname_en;
             }
-            outLongName = fixedString(longName, sizeof(meta->longname_en));
+            outLongName    = fixedString(longName, sizeof(meta->longname_en));
+            outProductCode = fixedString(meta->product_code, sizeof(meta->product_code));
         }
         free(meta);
         return result;
@@ -108,6 +109,7 @@ namespace {
     struct CachedName {
         std::string name;
         std::string longName;
+        std::string productCode;
     };
 
     std::string sanitizeCacheField(const std::string &in) {
@@ -147,7 +149,11 @@ namespace {
             }
             uint64_t titleId = strtoull(line.substr(0, tab1).c_str(), nullptr, 16);
             if (titleId != 0) {
-                result[titleId] = {line.substr(tab1 + 1, tab2 - tab1 - 1), line.substr(tab2 + 1)};
+                //! 4th field (product code) is optional, older caches don't have it
+                size_t tab3          = line.find('\t', tab2 + 1);
+                std::string longName = line.substr(tab2 + 1, tab3 == std::string::npos ? std::string::npos : tab3 - tab2 - 1);
+                std::string product  = tab3 == std::string::npos ? "" : line.substr(tab3 + 1);
+                result[titleId]      = {line.substr(tab1 + 1, tab2 - tab1 - 1), longName, product};
             }
         }
         DEBUG_FUNCTION_LINE("Loaded %d cached names", (int) result.size());
@@ -164,6 +170,8 @@ namespace {
             text += sanitizeCacheField(entry.second.name);
             text += '\t';
             text += sanitizeCacheField(entry.second.longName);
+            text += '\t';
+            text += sanitizeCacheField(entry.second.productCode);
             text += '\n';
         }
         FSUtils::CreateSubfolder(NAME_CACHE_DIR);
@@ -391,8 +399,9 @@ void GameList::pollEvents() {
             case PendingEvent::TITLE_UPDATED: {
                 gameInfo *info = event.info;
                 if (event.hasName) {
-                    info->name     = event.name;
-                    info->longName = event.longName;
+                    info->name        = event.name;
+                    info->longName    = event.longName;
+                    info->productCode = event.productCode;
                 }
                 if (!event.iconTga.empty()) {
                     texturesCreated++;
@@ -496,8 +505,9 @@ int32_t GameList::readGameList() {
     for (auto *info : newList) {
         auto it = cache.find(info->titleId);
         if (it != cache.end()) {
-            info->name     = it->second.name;
-            info->longName = it->second.longName;
+            info->name        = it->second.name;
+            info->longName    = it->second.longName;
+            info->productCode = it->second.productCode;
         }
     }
 
@@ -525,11 +535,12 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         std::string metaDir;
         std::string cachedName;
         std::string cachedLongName;
+        std::string cachedProductCode;
     };
     std::vector<Job> jobs;
     lock();
     for (auto *info : fullGameList) {
-        jobs.push_back({info, info->titleId, metaDirectoryFor(info), info->name, info->longName});
+        jobs.push_back({info, info->titleId, metaDirectoryFor(info), info->name, info->longName, info->productCode});
     }
     unlock();
 
@@ -596,10 +607,10 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
             cached++;
         } else {
             OSTime t0     = OSGetTime();
-            event.hasName = readTitleName(job.titleId, event.name, event.longName);
+            event.hasName = readTitleName(job.titleId, event.name, event.longName, event.productCode);
             nameTicks += OSGetTime() - t0;
             if (event.hasName) {
-                freshNames[job.titleId] = {event.name, event.longName};
+                freshNames[job.titleId] = {event.name, event.longName, event.productCode};
                 cacheChanged            = true;
             }
         }
@@ -631,13 +642,14 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         }
         PendingEvent event{PendingEvent::TITLE_UPDATED};
         event.info = job.info;
-        if (!readTitleName(job.titleId, event.name, event.longName)) {
+        if (!readTitleName(job.titleId, event.name, event.longName, event.productCode)) {
             //! keep the cached name, it is still the best we have
-            freshNames[job.titleId] = {job.cachedName, job.cachedLongName};
+            freshNames[job.titleId] = {job.cachedName, job.cachedLongName, job.cachedProductCode};
             continue;
         }
-        freshNames[job.titleId] = {event.name, event.longName};
-        if (event.name != job.cachedName || event.longName != job.cachedLongName) {
+        freshNames[job.titleId] = {event.name, event.longName, event.productCode};
+        DEBUG_FUNCTION_LINE("%016llX %-12s appType %08X \"%s\"", job.titleId, event.productCode.c_str(), job.info->mcpInfo.appType, event.name.c_str());
+        if (event.name != job.cachedName || event.longName != job.cachedLongName || event.productCode != job.cachedProductCode) {
             DEBUG_FUNCTION_LINE("%016llX renamed to \"%s\"", job.titleId, event.name.c_str());
             cacheChanged  = true;
             event.hasName = true;

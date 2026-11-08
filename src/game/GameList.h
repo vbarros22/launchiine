@@ -18,6 +18,7 @@ typedef struct _gameInfo {
     MCPAppType appType;
     std::string name;     // short name, shown in the menu
     std::string longName; // full name, only used for search ("The Legend of Zelda: ...")
+    std::string productCode; // "WUP-P-ALZE", used to sort titles into folders
     std::string gamePath;
     GuiImageData *imageData;
     MCPTitleListType mcpInfo; // as reported by MCP_TitleList, needed to launch homebrew
@@ -139,6 +140,7 @@ protected:
         gameInfo *info          = nullptr;
         std::string name        = "";
         std::string longName    = "";
+        std::string productCode = "";
         bool hasName            = false;
         //! Sanitized TGA. The texture is created from it on the render thread: creating a
         //! GuiImageData calls GX2Invalidate, which writes into the GX2 command buffer and must
