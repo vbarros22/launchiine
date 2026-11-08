@@ -3,6 +3,9 @@
 #include "fs/FSUtils.h"
 #include "utils/AsyncExecutor.h"
 #include "utils/logger.h"
+#include <cstring>
+#include <malloc.h>
+#include <vector>
 
 GameSplashScreen::GameSplashScreen(int32_t w, int32_t h, gameInfo *info, bool onTV) : GuiFrame(w, h),
                                                                                       bgImageColor(w, h, (GX2Color){0, 0, 0, 0}) {
@@ -22,13 +25,20 @@ GameSplashScreen::GameSplashScreen(int32_t w, int32_t h, gameInfo *info, bool on
     this->onTV = onTV;
     this->info = info;
 
-    std::string filepath = "fs:" + info->gamePath + META_PATH + "/bootDRCTex.tga";
-    if (onTV) {
-        filepath = "fs:" + info->gamePath + META_PATH + "/bootTVTex.tga";
+    std::string filepath = metaDirectoryFor(info) + (onTV ? "/bootTvTex.tga" : "/bootDrcTex.tga");
+    uint8_t *buffer      = nullptr;
+    uint32_t bufferSize  = 0;
+    int iResult          = 0;
+    if (isHomebrewTitle(info->titleId)) {
+        std::vector<uint8_t> raw;
+        if (FSUtils::LoadFileRawFS(filepath.c_str(), raw) && !raw.empty() && (buffer = (uint8_t *) malloc(raw.size())) != nullptr) {
+            memcpy(buffer, raw.data(), raw.size());
+            bufferSize = raw.size();
+            iResult    = bufferSize;
+        }
+    } else {
+        iResult = FSUtils::LoadFileToMem(("fs:" + filepath).c_str(), &buffer, &bufferSize);
     }
-    uint8_t *buffer     = nullptr;
-    uint32_t bufferSize = 0;
-    int iResult         = FSUtils::LoadFileToMem(filepath.c_str(), &buffer, &bufferSize);
     if (iResult > 0) {
         splashScreenData = new GuiImageData(buffer, bufferSize, GX2_TEX_CLAMP_MODE_MIRROR);
         if (splashScreenData) {

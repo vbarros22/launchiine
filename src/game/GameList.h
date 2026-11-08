@@ -2,6 +2,7 @@
 #define GAME_LIST_H_
 
 #include <atomic>
+#include <cstdio>
 #include <deque>
 #include <coreinit/cache.h>
 #include <coreinit/mcp.h>
@@ -19,7 +20,30 @@ typedef struct _gameInfo {
     std::string longName; // full name, only used for search ("The Legend of Zelda: ...")
     std::string gamePath;
     GuiImageData *imageData;
+    MCPTitleListType mcpInfo; // as reported by MCP_TitleList, needed to launch homebrew
 } gameInfo;
+
+//! Homebrew (.rpx/.wuhb in sd:/wiiu/apps) added by the Aroma homebrew_on_menu plugin
+static inline bool isHomebrewTitle(uint64_t titleId) {
+    return (titleId >> 32) == 0x0005000F;
+}
+
+//! System Settings, eShop, Miiverse, ... (00050010, 00050030)
+static inline bool isSystemTitleId(uint64_t titleId) {
+    uint32_t upper = titleId >> 32;
+    return upper == 0x00050010 || upper == 0x00050030;
+}
+
+//! Directory with iconTex.tga, bootTvTex.tga, ... For homebrew this is a virtual path the
+//! plugin serves through FSOpenFile, read it with FSUtils::LoadFileRawFS.
+static inline std::string metaDirectoryFor(const gameInfo *info) {
+    if (isHomebrewTitle(info->titleId)) {
+        char path[64];
+        snprintf(path, sizeof(path), "/vol/storage_mlc01/sys/title/%08X/%08X/meta", (uint32_t) (info->titleId >> 32), (uint32_t) info->titleId);
+        return path;
+    }
+    return info->gamePath + "/meta";
+}
 
 /**
  * Threading model:

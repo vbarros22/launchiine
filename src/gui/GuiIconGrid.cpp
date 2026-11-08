@@ -254,7 +254,8 @@ void GuiIconGrid::setTitleText(const std::string &text) {
 //! System apps (System Settings, eShop, ...) first, then games, each group sorted by the
 //! full name.
 static bool isSystemTitle(const gameInfo *info) {
-    return info->appType != MCP_APP_TYPE_GAME && info->appType != MCP_APP_TYPE_GAME_WII;
+    //! by title id: homebrew without splash screens reports a system app type
+    return isSystemTitleId(info->titleId);
 }
 
 void GuiIconGrid::resortPositions() {

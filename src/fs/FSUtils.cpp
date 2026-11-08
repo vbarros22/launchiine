@@ -1,4 +1,5 @@
 #include "fs/FSUtils.h"
+#include <coreinit/filesystem.h>
 #include "fs/CFile.hpp"
 #include "utils/logger.h"
 #include <fcntl.h>
@@ -138,4 +139,47 @@ int32_t FSUtils::saveBufferToFile(const char *path, void *buffer, uint32_t size)
     int32_t written = file.write((const uint8_t *) buffer, size);
     file.close();
     return written;
+}
+
+bool FSUtils::LoadFileRawFS(const char *path, std::vector<uint8_t> &out) {
+    out.clear();
+    auto *client = (FSClient *) memalign(0x40, sizeof(FSClient));
+    auto *block  = (FSCmdBlock *) memalign(0x40, sizeof(FSCmdBlock));
+    constexpr uint32_t CHUNK = 0x4000;
+    auto *chunk  = (uint8_t *) memalign(0x40, CHUNK);
+    bool result  = false;
+    if (client && block && chunk) {
+        FSInit();
+        if (FSAddClient(client, FS_ERROR_FLAG_ALL) == FS_STATUS_OK) {
+            FSInitCmdBlock(block);
+            FSFileHandle handle = 0;
+            if (FSOpenFile(client, block, path, "r", &handle, FS_ERROR_FLAG_ALL) == FS_STATUS_OK) {
+                result = true;
+                while (true) {
+                    FSStatus read = FSReadFile(client, block, chunk, 1, CHUNK, handle, 0, FS_ERROR_FLAG_ALL);
+                    if (read < 0) {
+                        result = false;
+                        break;
+                    }
+                    if (read == 0) {
+                        break;
+                    }
+                    out.insert(out.end(), chunk, chunk + read);
+                    if (out.size() > 16 * 1024 * 1024) { // no icon or splash is that big
+                        result = false;
+                        break;
+                    }
+                }
+                FSCloseFile(client, block, handle, FS_ERROR_FLAG_ALL);
+            }
+            FSDelClient(client, FS_ERROR_FLAG_ALL);
+        }
+    }
+    free(chunk);
+    free(block);
+    free(client);
+    if (!result) {
+        out.clear();
+    }
+    return result;
 }

@@ -503,6 +503,8 @@ void MainWindow::OnGameLaunchSplashScreenFinished(GuiElement *element, gameInfo 
 }
 
 extern "C" int32_t SYSSwitchToBrowser(void *);
+extern "C" int32_t ACPCheckTitleLaunchByTitleListTypeEx(MCPTitleListType *title, uint32_t unk);
+extern "C" int32_t _SYSLaunchTitleByPathFromLauncher(const char *path, uint32_t pathLength);
 extern "C" int32_t SYSSwitchToEShop(void *);
 extern "C" int32_t _SYSSwitchTo(uint32_t pfid);
 
@@ -560,6 +562,28 @@ bool MainWindow::OnGameLaunch(uint64_t titleId) {
         return false;
     }
 
+    if (isHomebrewTitle(titleId)) {
+        //! Same calls as the Wii U Menu. The homebrew_on_menu plugin hooks both: the first
+        //! prepares the RPX loader, the second starts it in place of Health & Safety.
+        gameInfo *info = gameList.getGameInfo(titleId);
+        if (info == nullptr) {
+            DEBUG_FUNCTION_LINE("Unknown homebrew %016llX", titleId);
+            return false;
+        }
+        MCPTitleListType homebrewInfo = info->mcpInfo;
+        stopTitleLoader();
+        saveLastTitle(titleId);
+        int32_t check = ACPCheckTitleLaunchByTitleListTypeEx(&homebrewInfo, 0);
+        DEBUG_FUNCTION_LINE("Launching homebrew %016llX (%s), check %d", titleId, homebrewInfo.path, check);
+        if (check != 0) {
+            return false;
+        }
+        char path[sizeof(homebrewInfo.path) + 1] = {};
+        memcpy(path, homebrewInfo.path, sizeof(homebrewInfo.path));
+        _SYSLaunchTitleByPathFromLauncher(path, strlen(path));
+        return true;
+    }
+
     MCPTitleListType titleInfo;
     int32_t handle = MCP_Open();
     auto err       = MCP_GetTitleInfo(handle, titleId, &titleInfo);
@@ -568,8 +592,8 @@ bool MainWindow::OnGameLaunch(uint64_t titleId) {
         //! IPC from the loader thread while the system switches titles can hang the exit,
         //! so stop it first. This takes at most the time to load one icon.
         stopTitleLoader();
-        //! remember games (00050000xxxxxxxx), not system titles like System Settings
-        if ((titleId >> 32) == 0x00050000) {
+        //! remember games, not system titles like System Settings
+        if (!isSystemTitleId(titleId)) {
             saveLastTitle(titleId);
         }
         ACPAssignTitlePatch(&titleInfo);

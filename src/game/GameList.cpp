@@ -19,6 +19,8 @@
 #include "fs/FSUtils.h"
 #include "utils/logger.h"
 
+extern "C" int32_t ACPGetTitleMetaXmlByDevice(uint32_t titleIdUpper, uint32_t titleIdLower, ACPMetaXml *out, uint32_t device, uint32_t unk);
+
 namespace {
     //! Size of the buffer handed to ACPGetTitleMetaXml. The struct in wut is smaller than
     //! what the system writes, so keep the generous size from the original code.
@@ -62,8 +64,12 @@ namespace {
         }
         memset(meta, 0, META_XML_BUFFER_SIZE);
 
+        //! the homebrew plugin only answers the ...ByDevice variant (that's what the Wii U Menu uses)
+        int32_t acpResult = isHomebrewTitle(titleId)
+                                    ? ACPGetTitleMetaXmlByDevice((uint32_t) (titleId >> 32), (uint32_t) titleId, meta, 0, 0)
+                                    : ACPGetTitleMetaXml(titleId, meta);
         bool result = false;
-        if (ACPGetTitleMetaXml(titleId, meta) >= 0) {
+        if (acpResult >= 0) {
             const char *names[12] = {
                     meta->shortname_ja, meta->shortname_en, meta->shortname_fr,
                     meta->shortname_de, meta->shortname_it, meta->shortname_es,
@@ -271,11 +277,23 @@ namespace {
     }
 
     //! Loader thread: reads and sanitizes the icon. No GX2 calls here.
-    bool readTitleIcon(uint64_t titleId, const std::string &gamePath, std::vector<uint8_t> &outTga) {
-        std::string filepath = "fs:" + gamePath + META_PATH + "/iconTex.tga";
+    bool readTitleIcon(uint64_t titleId, const std::string &metaDir, std::vector<uint8_t> &outTga) {
+        std::string iconPath = metaDir + "/iconTex.tga";
         uint8_t *buffer      = nullptr;
         uint32_t bufferSize  = 0;
-        if (FSUtils::LoadFileToMem(filepath.c_str(), &buffer, &bufferSize) <= 0 || buffer == nullptr) {
+        if (isHomebrewTitle(titleId)) {
+            std::vector<uint8_t> raw;
+            if (!FSUtils::LoadFileRawFS(iconPath.c_str(), raw) || raw.empty()) {
+                DEBUG_FUNCTION_LINE("%016llX: no homebrew icon", titleId);
+                return false;
+            }
+            bufferSize = raw.size();
+            buffer     = (uint8_t *) malloc(bufferSize);
+            if (!buffer) {
+                return false;
+            }
+            memcpy(buffer, raw.data(), bufferSize);
+        } else if (FSUtils::LoadFileToMem(("fs:" + iconPath).c_str(), &buffer, &bufferSize) <= 0 || buffer == nullptr) {
             DEBUG_FUNCTION_LINE("%016llX: no icon file", titleId);
             return false;
         }
@@ -404,13 +422,23 @@ int32_t GameList::readGameList() {
     }
 
     MCPError titleCount = MCP_TitleCount(mcp);
-    if (titleCount <= 0) {
+    if (titleCount < 0) {
         MCP_Close(mcp);
         return 0;
     }
 
-    std::vector<struct MCPTitleListType> titles(titleCount);
+    //! MCP_TitleList instead of MCP_TitleListByAppType: the Aroma homebrew_on_menu plugin
+    //! appends the homebrew titles to MCP_TitleList only. It writes them after the real
+    //! titles without checking the buffer size, so leave plenty of room.
+    constexpr uint32_t HOMEBREW_RESERVE = 1024;
+    std::vector<struct MCPTitleListType> titles(titleCount + HOMEBREW_RESERVE);
     uint32_t realTitleCount = 0;
+    MCPError err            = MCP_TitleList(mcp, &realTitleCount, titles.data(), titles.size() * sizeof(decltype(titles)::value_type));
+    MCP_Close(mcp);
+    if (err < 0) {
+        DEBUG_FUNCTION_LINE("MCP_TitleList failed: %08X", err);
+        return 0;
+    }
 
     static const std::vector<MCPAppType> menuAppTypes{
             MCP_APP_TYPE_GAME,
@@ -424,23 +452,19 @@ int32_t GameList::readGameList() {
             MCP_APP_TYPE_DOWNLOAD_MANAGEMENT,
             MCP_APP_TYPE_ACCOUNT_APPS,
     };
-
-    for (auto appType : menuAppTypes) {
-        if (realTitleCount >= titles.size()) {
-            break;
-        }
-        uint32_t titleCountByType = 0;
-        MCPError err              = MCP_TitleListByAppType(mcp, appType, &titleCountByType, titles.data() + realTitleCount,
-                                                           (titles.size() - realTitleCount) * sizeof(decltype(titles)::value_type));
-        if (err < 0) {
-            DEBUG_FUNCTION_LINE("MCP_TitleListByAppType failed for %08X", appType);
-            continue; // skip this type instead of losing the whole list
-        }
-        realTitleCount += titleCountByType;
-    }
-    MCP_Close(mcp);
-
     titles.resize(std::min<uint32_t>(realTitleCount, titles.size()));
+    titles.erase(std::remove_if(titles.begin(), titles.end(), [](const MCPTitleListType &t) {
+                     return std::find(menuAppTypes.begin(), menuAppTypes.end(), t.appType) == menuAppTypes.end();
+                 }),
+                 titles.end());
+    uint32_t homebrewCount = 0;
+    for (auto &t : titles) {
+        if (isHomebrewTitle(t.titleId)) {
+            homebrewCount++;
+        }
+    }
+    DEBUG_FUNCTION_LINE("MCP_TitleList: %u titles total, %u for the menu, %u homebrew", realTitleCount, (uint32_t) titles.size(), homebrewCount);
+
 
     std::vector<gameInfo *> newList;
     newList.reserve(titles.size());
@@ -463,6 +487,7 @@ int32_t GameList::readGameList() {
         newGameInfo->gamePath  = title_candidate.path;
         newGameInfo->name      = "<unknown>";
         newGameInfo->imageData = nullptr;
+        newGameInfo->mcpInfo   = title_candidate;
         newList.push_back(newGameInfo);
     }
 
@@ -497,14 +522,14 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     struct Job {
         gameInfo *info;
         uint64_t titleId;
-        std::string gamePath;
+        std::string metaDir;
         std::string cachedName;
         std::string cachedLongName;
     };
     std::vector<Job> jobs;
     lock();
     for (auto *info : fullGameList) {
-        jobs.push_back({info, info->titleId, info->gamePath, info->name, info->longName});
+        jobs.push_back({info, info->titleId, metaDirectoryFor(info), info->name, info->longName});
     }
     unlock();
 
@@ -566,7 +591,7 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         OSTime t0     = OSGetTime();
         event.hasName = readTitleName(job.titleId, event.name, event.longName);
         OSTime t1     = OSGetTime();
-        bool hasIcon    = readTitleIcon(job.titleId, job.gamePath, event.iconTga);
+        bool hasIcon    = readTitleIcon(job.titleId, job.metaDir, event.iconTga);
         OSTime t2       = OSGetTime();
         nameTicks += t1 - t0;
         iconTicks += t2 - t1;
