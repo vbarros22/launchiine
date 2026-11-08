@@ -33,6 +33,15 @@ public:
         return 0;
     }
 
+    //! show the content of a folder (0: main grid) without emitting folderOpened
+    virtual void openFolder(uint64_t folder) {}
+
+    //! a title was moved in or out of a folder (by the other screen)
+    virtual void refreshFolders() {}
+
+    sigslot::signal2<GuiTitleBrowser *, uint64_t> folderOpened;
+    sigslot::signal1<GuiTitleBrowser *> folderMembershipChanged;
+
     sigslot::signal2<GuiTitleBrowser *, uint64_t> gameLaunchClicked;
     sigslot::signal2<GuiTitleBrowser *, uint64_t> gameSelectionChanged;
 };

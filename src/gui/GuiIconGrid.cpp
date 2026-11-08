@@ -17,6 +17,7 @@
 #include "Application.h"
 #include "common/common.h"
 #include "gui/GameIcon.h"
+#include "game/Folders.h"
 #include "utils/logger.h"
 #include <algorithm>
 #include <coreinit/cache.h>
@@ -34,7 +35,10 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
       rightTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_RIGHT | GuiTrigger::STICK_L_RIGHT, true),
       downTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_DOWN | GuiTrigger::STICK_L_DOWN, true), upTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_UP | GuiTrigger::STICK_L_UP, true),
       buttonATrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_A, true), buttonLTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_L, true),
-      buttonRTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_R, true), leftButton(w, h), rightButton(w, h), downButton(w, h), upButton(w, h), launchButton(w, h),
+      buttonRTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_R, true),
+      buttonBTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_B, true),
+      buttonYTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_Y, true),
+      backButton(w, h), folderToggleButton(w, h), leftButton(w, h), rightButton(w, h), downButton(w, h), upButton(w, h), launchButton(w, h),
       arrowRightImageData(Resources::GetImageData("rightArrow.png")), arrowLeftImageData(Resources::GetImageData("leftArrow.png")), arrowRightImage(arrowRightImageData),
       arrowLeftImage(arrowLeftImageData), arrowRightButton(arrowRightImage.getWidth(), arrowRightImage.getHeight()), arrowLeftButton(arrowLeftImage.getWidth(), arrowLeftImage.getHeight()),
       noIcon(Resources::GetFile("noGameIcon.png"), Resources::GetFileSize("noGameIcon.png"), GX2_TEX_CLAMP_MODE_MIRROR),
@@ -67,6 +71,14 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     launchButton.setSoundClick(buttonClickSound);
     launchButton.clicked.connect(this, &GuiIconGrid::OnLaunchClick);
     this->append(&launchButton);
+
+    backButton.setTrigger(&buttonBTrigger);
+    backButton.clicked.connect(this, &GuiIconGrid::OnBackClick);
+    this->append(&backButton);
+
+    folderToggleButton.setTrigger(&buttonYTrigger);
+    folderToggleButton.clicked.connect(this, &GuiIconGrid::OnFolderToggleClick);
+    this->append(&folderToggleButton);
 
     arrowLeftButton.setImage(&arrowLeftImage);
     arrowLeftButton.setEffectGrow();
@@ -128,6 +140,118 @@ GuiIconGrid::~GuiIconGrid() {
 
     emptyButtons.clear();
     emptyIcons.clear();
+
+    for (auto &image : folderImages) {
+        delete image;
+        image = nullptr;
+    }
+}
+
+void GuiIconGrid::setupFolders() {
+    const uint64_t ids[2]    = {Folders::FOLDER_SYSTEM, Folders::FOLDER_HOMEBREW};
+    const uint32_t colors[2] = {0x3A7BD5, 0xE8892B};
+    for (int i = 0; i < 2; i++) {
+        if (folderImages[i] == nullptr) {
+            auto tga        = Folders::makeFolderIconTga(colors[i]);
+            folderImages[i] = new GuiImageData(tga.data(), tga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
+        }
+        gameInfo &info = folderInfos[i];
+        info.titleId   = ids[i];
+        info.appType   = (MCPAppType) 0;
+        info.name      = Folders::folderName(ids[i]);
+        info.longName  = "";
+        info.imageData = folderImages[i];
+
+        containerMutex.lock();
+        bool exists = gameInfoContainers.find(ids[i]) != gameInfoContainers.end();
+        containerMutex.unlock();
+        if (!exists) {
+            OnGameTitleAdded(&info);
+        }
+    }
+}
+
+bool GuiIconGrid::folderHasTitles(uint64_t folder) {
+    std::lock_guard<std::recursive_mutex> positionLock(positionMutex);
+    for (auto titleId : position) {
+        if (!Folders::isFolder(titleId) && Folders::folderOf(titleId) == folder) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void GuiIconGrid::afterFolderChange(uint64_t preferredSelection) {
+    //! a folder that became empty closes
+    if (currentFolder != 0 && !folderHasTitles(currentFolder)) {
+        preferredSelection = currentFolder;
+        currentFolder      = 0;
+    }
+    displayOrderVersion++;
+    bUpdatePositions = true;
+
+    uint64_t selection = preferredSelection;
+    if (offsetForTitleId(selection) < 0) {
+        selection = firstTitleInLayout();
+    }
+    setSelectedGame(selection);
+    gameSelectionChanged(this, selectedGame);
+
+    int32_t offset = offsetForTitleId(selectedGame);
+    curPage        = offset >= 0 ? offset / (MAX_COLS * MAX_ROWS) : 0;
+}
+
+void GuiIconGrid::openFolder(uint64_t folder) {
+    if (folder == currentFolder) {
+        return;
+    }
+    uint64_t previous = currentFolder;
+    currentFolder     = folder;
+    //! entering: first title of the folder; leaving: the folder icon
+    afterFolderChange(folder != 0 ? 0 : previous);
+}
+
+void GuiIconGrid::refreshFolders() {
+    afterFolderChange(selectedGame);
+}
+
+void GuiIconGrid::OnBackClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    if (currentFolder == 0) {
+        return;
+    }
+    openFolder(0);
+    folderOpened(this, 0);
+}
+
+void GuiIconGrid::OnFolderToggleClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    uint64_t titleId = selectedGame;
+    uint64_t folder  = Folders::naturalFolder(titleId);
+    if (folder == 0 || !filterText.empty()) {
+        return; // not a folder title, or the search shows everything flat anyway
+    }
+    bool takeOut = !Folders::isTakenOut(titleId);
+    Folders::setTakenOut(titleId, takeOut);
+    DEBUG_FUNCTION_LINE("%016llX %s the %s folder", titleId, takeOut ? "taken out of" : "put back into", Folders::folderName(folder));
+
+    //! taken out: stay in the folder on the next title; put back: select the folder icon
+    uint64_t next = titleId;
+    if (takeOut) {
+        auto layout = currentLayout();
+        next        = 0;
+        for (size_t i = 0; i < layout.size(); i++) {
+            if (layout[i] == titleId) {
+                next = i + 1 < layout.size() ? layout[i + 1] : (i > 0 ? layout[i - 1] : 0);
+                break;
+            }
+        }
+    } else {
+        next = folder;
+    }
+    afterFolderChange(next);
+    folderMembershipChanged(this);
+
+    std::string message = std::string(takeOut ? "Moved out of the " : "Moved back into the ") + Folders::folderName(folder) + " folder";
+    setTitleText(message);
 }
 
 int32_t GuiIconGrid::offsetForTitleId(uint64_t titleId) {
@@ -260,7 +384,7 @@ static bool isSystemTitle(const gameInfo *info) {
 
 void GuiIconGrid::resortPositions() {
     struct Entry {
-        bool system;
+        int group; // 0 folders, 1 system apps, 2 everything else
         std::string key;
         uint64_t titleId;
     };
@@ -268,13 +392,16 @@ void GuiIconGrid::resortPositions() {
     containerMutex.lock();
     for (auto &x : gameInfoContainers) {
         const gameInfo *info = x.second->info;
-        entries.push_back({isSystemTitle(info), normalizeForSearch(displayName(info)), x.first});
+        int group            = Folders::isFolder(x.first) ? 0 : (isSystemTitle(info) ? 1 : 2);
+        //! folders keep their fixed order (System, Homebrew)
+        std::string key = group == 0 ? "" : normalizeForSearch(displayName(info));
+        entries.push_back({group, key, x.first});
     }
     containerMutex.unlock();
 
     std::sort(entries.begin(), entries.end(), [](const Entry &l, const Entry &r) {
-        if (l.system != r.system) {
-            return l.system;
+        if (l.group != r.group) {
+            return l.group < r.group;
         }
         if (l.key != r.key) {
             return l.key < r.key;
@@ -320,18 +447,36 @@ bool GuiIconGrid::matchesFilter(const gameInfo *info) const {
 
 std::vector<uint64_t> GuiIconGrid::currentLayout() {
     std::lock_guard<std::recursive_mutex> positionLock(positionMutex);
-    if (filterText.empty()) {
-        return position;
-    }
-    //! filtered view: matching titles in the user's order, without gaps
     std::vector<uint64_t> result;
-    std::lock_guard<std::recursive_mutex> containerLock(containerMutex);
-    for (auto titleId : position) {
-        if (titleId == 0) {
-            continue;
+    if (!filterText.empty()) {
+        //! search: every matching title, also those inside folders, without the folder icons
+        std::lock_guard<std::recursive_mutex> containerLock(containerMutex);
+        for (auto titleId : position) {
+            if (titleId == 0 || Folders::isFolder(titleId)) {
+                continue;
+            }
+            auto it = gameInfoContainers.find(titleId);
+            if (it != gameInfoContainers.end() && matchesFilter(it->second->info)) {
+                result.push_back(titleId);
+            }
         }
-        auto it = gameInfoContainers.find(titleId);
-        if (it != gameInfoContainers.end() && matchesFilter(it->second->info)) {
+        return result;
+    }
+    if (currentFolder != 0) {
+        for (auto titleId : position) {
+            if (!Folders::isFolder(titleId) && Folders::folderOf(titleId) == currentFolder) {
+                result.push_back(titleId);
+            }
+        }
+        return result;
+    }
+    //! main grid: folders that have something in them, and every title outside of folders
+    for (auto titleId : position) {
+        if (Folders::isFolder(titleId)) {
+            if (folderHasTitles(titleId)) {
+                result.push_back(titleId);
+            }
+        } else if (Folders::folderOf(titleId) == 0) {
             result.push_back(titleId);
         }
     }
@@ -411,8 +556,8 @@ void GuiIconGrid::OnGameTitleListUpdated(GameList *gameList) {
     // At first delete the ones that were deleted;
     auto it = gameInfoContainers.begin();
     while (it != gameInfoContainers.end()) {
-        bool wasFound = false;
-        for (int32_t i = 0; i < gameList->size(); i++) {
+        bool wasFound = Folders::isFolder(it->first);
+        for (int32_t i = 0; i < gameList->size() && !wasFound; i++) {
             gameInfo *info = gameList->at(i);
             if (info != nullptr && info->titleId == it->first) {
                 wasFound = true;
@@ -448,14 +593,20 @@ void GuiIconGrid::OnGameTitleListUpdated(GameList *gameList) {
     containerMutex.unlock();
     gameList->unlock();
 
+    setupFolders();
+
     bResort = false;
     resortPositions();
+
+    //! the menu opens on the last launched title, open its folder if it is in one
+    currentFolder = Folders::folderOf(selectedGame);
+    displayOrderVersion++;
 
     uint64_t newSelection = selectedGame;
     containerMutex.lock();
     bool selectionExists = gameInfoContainers.find(selectedGame) != gameInfoContainers.end();
     containerMutex.unlock();
-    if (!selectionExists || !matchesFilter(gameInfoContainers[selectedGame]->info)) {
+    if (!selectionExists || offsetForTitleId(selectedGame) < 0) {
         newSelection = firstTitleInLayout();
     }
     setSelectedGame(newSelection);
@@ -610,6 +761,11 @@ void GuiIconGrid::OnLaunchClick(GuiButton *button, const GuiController *controll
         return;
     }
     uint64_t titleId = getSelectedGame();
+    if (Folders::isFolder(titleId)) {
+        openFolder(titleId);
+        folderOpened(this, titleId);
+        return;
+    }
     containerMutex.lock();
     auto it          = gameInfoContainers.find(titleId);
     bool valid       = it != gameInfoContainers.end() && it->second->info != nullptr;

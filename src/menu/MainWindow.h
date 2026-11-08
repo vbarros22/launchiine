@@ -150,6 +150,12 @@ private:
 
     void OnGameSelectionChange(GuiTitleBrowser *element, uint64_t titleId);
 
+    void connectFolderSignals();
+
+    void OnFolderOpened(GuiTitleBrowser *element, uint64_t folder);
+
+    void OnFolderMembershipChanged(GuiTitleBrowser *element);
+
     void OnSettingsButtonClicked(GuiElement *element);
 
     void OnLayoutSwitchClicked(GuiElement *element);

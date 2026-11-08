@@ -50,6 +50,10 @@ public:
 
     void setFilter(const std::string &filter) override;
 
+    void openFolder(uint64_t folder) override;
+
+    void refreshFolders() override;
+
     std::vector<uint64_t> getDisplayOrder() override {
         return currentLayout();
     }
@@ -75,6 +79,22 @@ private:
     bool bResort                 = false;
     uint32_t displayOrderVersion = 0;
 
+    //! folder whose content is shown, 0 for the main grid
+    uint64_t currentFolder = 0;
+    gameInfo folderInfos[2]{};
+    GuiImageData *folderImages[2]{};
+
+    void setupFolders();
+
+    bool folderHasTitles(uint64_t folder);
+
+    //! after the folder content changed: valid selection, page and redraw
+    void afterFolderChange(uint64_t preferredSelection);
+
+    void OnBackClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
+
+    void OnFolderToggleClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
+
     bool matchesFilter(const gameInfo *info) const;
 
     std::string filterText;
@@ -97,6 +117,10 @@ private:
     GuiTrigger buttonATrigger;
     GuiTrigger buttonLTrigger;
     GuiTrigger buttonRTrigger;
+    GuiTrigger buttonBTrigger;
+    GuiTrigger buttonYTrigger;
+    GuiButton backButton;
+    GuiButton folderToggleButton;
     GuiButton leftButton;
     GuiButton rightButton;
     GuiButton downButton;

@@ -328,6 +328,7 @@ void MainWindow::SetupMainView() {
 
     currentDrcFrame->gameSelectionChanged.connect(this, &MainWindow::OnGameSelectionChange);
     currentDrcFrame->gameLaunchClicked.connect(this, &MainWindow::OnGameLaunchSplashScreen);
+    connectFolderSignals();
 
     mainSwitchButtonFrame = new MainDrcButtonsFrame(width, height);
     mainSwitchButtonFrame->settingsButtonClicked.connect(this, &MainWindow::OnSettingsButtonClicked);
@@ -413,6 +414,7 @@ void MainWindow::OnLayoutSwitchEffectFinish(GuiElement *element) {
     currentTvFrame->gameLaunchClicked.connect(this, &MainWindow::OnGameLaunchSplashScreen);
     currentDrcFrame->gameSelectionChanged.connect(this, &MainWindow::OnGameSelectionChange);
     currentDrcFrame->gameLaunchClicked.connect(this, &MainWindow::OnGameLaunchSplashScreen);
+    connectFolderSignals();
 }
 
 void MainWindow::OnOpenEffectFinish(GuiElement *element) {
@@ -447,6 +449,29 @@ void MainWindow::OnSettingsButtonClicked(GuiElement *element) {
     }
     DEBUG_FUNCTION_LINE("Open System Settings %016llX", settingsTitleId);
     OnGameLaunchSplashScreen(nullptr, settingsTitleId);
+}
+
+void MainWindow::connectFolderSignals() {
+    for (auto *frame : {currentTvFrame, currentDrcFrame}) {
+        frame->folderOpened.disconnect(this);
+        frame->folderMembershipChanged.disconnect(this);
+        frame->folderOpened.connect(this, &MainWindow::OnFolderOpened);
+        frame->folderMembershipChanged.connect(this, &MainWindow::OnFolderMembershipChanged);
+    }
+}
+
+void MainWindow::OnFolderOpened(GuiTitleBrowser *element, uint64_t folder) {
+    GuiTitleBrowser *other = element == currentDrcFrame ? currentTvFrame : currentDrcFrame;
+    if (other && other != element) {
+        other->openFolder(folder);
+    }
+}
+
+void MainWindow::OnFolderMembershipChanged(GuiTitleBrowser *element) {
+    GuiTitleBrowser *other = element == currentDrcFrame ? currentTvFrame : currentDrcFrame;
+    if (other && other != element) {
+        other->refreshFolders();
+    }
 }
 
 void MainWindow::OnGameSelectionChange(GuiTitleBrowser *element, uint64_t selectedIdx) {
