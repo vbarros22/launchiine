@@ -251,6 +251,9 @@ void Application::executeThread() {
 
         video->waitForVSync();
 
+        //! GUI objects removed during the last frames are deleted here, on this thread
+        AsyncExecutor::processDeletes();
+
         //! heartbeat: tells a frozen render thread apart from a stuck loader in the logs
         if (++renderedFrames % 120 == 0) {
             DEBUG_FUNCTION_LINE("render thread alive, frame %u", renderedFrames);

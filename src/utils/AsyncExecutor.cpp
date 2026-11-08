@@ -5,7 +5,19 @@ AsyncExecutor *AsyncExecutor::instance = nullptr;
 
 void AsyncExecutor::pushForDeleteInternal(GuiElement *ptr) {
     deleteListMutex.lock();
-    deleteList.push(ptr);
+    deleteList.push_back({ptr, frameCounter});
+    deleteListMutex.unlock();
+}
+
+void AsyncExecutor::processDeletesInternal() {
+    deleteListMutex.lock();
+    frameCounter++;
+    //! a destructor may push more elements, those wait for the next frames
+    while (!deleteList.empty() && frameCounter - deleteList.front().frame >= 2) {
+        GuiElement *ptr = deleteList.front().element;
+        deleteList.pop_front();
+        delete ptr;
+    }
     deleteListMutex.unlock();
 }
 
@@ -28,13 +40,6 @@ AsyncExecutor::AsyncExecutor() {
                 DEBUG_FUNCTION_LINE("All tasks are done");
             }
             mutex.unlock();
-            deleteListMutex.lock();
-            while (!deleteList.empty()) {
-                GuiElement *ptr = deleteList.front();
-                deleteList.pop();
-                delete ptr;
-            }
-            deleteListMutex.unlock();
 
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
             DCFlushRange((void *) &exitThread, sizeof(exitThread));
@@ -46,6 +51,16 @@ AsyncExecutor::~AsyncExecutor() {
     exitThread = true;
     DCFlushRange((void *) &exitThread, sizeof(exitThread));
     thread->join();
+    delete thread;
+
+    //! rendering has stopped, delete what is left (destructors may push more)
+    deleteListMutex.lock();
+    while (!deleteList.empty()) {
+        GuiElement *ptr = deleteList.front().element;
+        deleteList.pop_front();
+        delete ptr;
+    }
+    deleteListMutex.unlock();
 }
 
 void AsyncExecutor::executeInternal(std::function<void()> func) {

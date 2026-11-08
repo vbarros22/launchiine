@@ -4,6 +4,7 @@
 #include <coreinit/cache.h>
 #include <future>
 #include <gui/GuiElement.h>
+#include <deque>
 #include <queue>
 #include <thread>
 #include <vector>
@@ -24,6 +25,15 @@ public:
         instance->executeInternal(func);
     }
 
+    //! Render thread, once per frame: deletes what was pushed at least two frames ago.
+    //! GUI objects must not be deleted on another thread: their sigslot connections are
+    //! not thread safe, and the GPU may still read a texture of the current frame.
+    static void processDeletes() {
+        if (instance) {
+            instance->processDeletesInternal();
+        }
+    }
+
     static void destroyInstance() {
         if (instance) {
             delete instance;
@@ -40,6 +50,8 @@ private:
 
     void pushForDeleteInternal(GuiElement *element);
 
+    void processDeletesInternal();
+
     void executeInternal(std::function<void()> func);
 
     std::recursive_mutex mutex;
@@ -49,5 +61,10 @@ private:
     std::vector<std::future<void>> elements;
 
     std::recursive_mutex deleteListMutex;
-    std::queue<GuiElement *> deleteList;
+    struct PendingDelete {
+        GuiElement *element;
+        uint32_t frame;
+    };
+    std::deque<PendingDelete> deleteList;
+    uint32_t frameCounter = 0;
 };
