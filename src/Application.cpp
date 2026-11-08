@@ -147,9 +147,8 @@ bool Application::procUI() {
                 video->tvEnable(true);
                 video->drcEnable(true);
 
-                DEBUG_FUNCTION_LINE("delete fontSystem");
-                delete fontSystem;
-                fontSystem = nullptr;
+                //! Keep the font alive: every GuiText stores a pointer to the font it was created
+                //! with, and the glyph textures live in MEM2, which is not released here.
 
                 DEBUG_FUNCTION_LINE("delete video");
                 delete video;
@@ -174,10 +173,12 @@ bool Application::procUI() {
                     video = new CVideo(GX2_TV_SCAN_MODE_720P, GX2_DRC_RENDER_MODE_SINGLE);
                     DEBUG_FUNCTION_LINE("Video size %i x %i", video->getTvWidth(), video->getTvHeight());
 
-                    //! setup default Font
-                    DEBUG_FUNCTION_LINE("Initialize main font system");
-                    auto *fontSystem = new FreeTypeGX(Resources::GetFile("font.ttf"), Resources::GetFileSize("font.ttf"), true);
-                    GuiText::setPresetFont(fontSystem);
+                    //! setup default Font (only once, see PROCUI_STATUS_RELEASE_FOREGROUND)
+                    if (fontSystem == nullptr) {
+                        DEBUG_FUNCTION_LINE("Initialize main font system");
+                        fontSystem = new FreeTypeGX(Resources::GetFile("font.ttf"), Resources::GetFileSize("font.ttf"), true);
+                        GuiText::setPresetFont(fontSystem);
+                    }
 
                     if (mainWindow == nullptr) {
                         DEBUG_FUNCTION_LINE("Initialize main window");
@@ -208,9 +209,19 @@ void Application::executeThread() {
         mainWindow->lockGUI();
         mainWindow->process();
 
-        //! Read out inputs
+        //! Read out inputs. While the software keyboard is open it reads the GamePad itself;
+        //! a second VPADRead per frame would steal button presses from one of the two.
+        const bool keyboardOpen = mainWindow->isKeyboardOpen();
         for (auto &i : controller) {
+            if (keyboardOpen) {
+                break;
+            }
             if (!i->update(video->getTvWidth(), video->getTvHeight()))
+                continue;
+
+            //! still read the controllers so their "last state" is fresh, but don't act on it
+            //! (e.g. the finger that just tapped OK on the keyboard must not tap an icon)
+            if (mainWindow->isInputBlocked())
                 continue;
 
             //! update controller states

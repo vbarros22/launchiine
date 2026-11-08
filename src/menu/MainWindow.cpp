@@ -63,6 +63,9 @@ MainWindow::~MainWindow() {
     }
 
     Resources::RemoveSound(gameClickSound);
+
+    delete keyboardInstance;
+    keyboardInstance = nullptr;
 }
 
 void MainWindow::updateEffects() {
@@ -88,6 +91,13 @@ void MainWindow::updateEffects() {
 }
 
 void MainWindow::process() {
+    //! apply results of the background title loader on this (the render) thread
+    gameList.pollEvents();
+
+    if (inputCooldown > 0) {
+        inputCooldown--;
+    }
+
     //! dont read behind the initial elements in case one was added
     uint32_t tvSize  = tvElements.size();
     uint32_t drcSize = drcElements.size();
@@ -108,16 +118,28 @@ void MainWindow::process() {
         }
     }
 
-    if (keyboardInstance != nullptr) {
+    if (keyboardInstance != nullptr && keyboardInstance->isReady()) {
+        //! must run every frame, also while the keyboard is fading out
         if (keyboardInstance->checkResult()) {
-            std::string result = keyboardInstance->getResult();
+            if (keyboardInstance->wasConfirmed()) {
+                std::string result = keyboardInstance->getResult();
+                DEBUG_FUNCTION_LINE("Search filter: \"%s\"", result.c_str());
+                currentTvFrame->setFilter(result);
+                if (currentDrcFrame != currentTvFrame) {
+                    currentDrcFrame->setFilter(result);
+                }
+            }
 
             currentTvFrame->clearState(GuiElement::STATE_DISABLED);
             currentDrcFrame->clearState(GuiElement::STATE_DISABLED);
             mainSwitchButtonFrame->clearState(GuiElement::STATE_DISABLED);
-        } else {
+            inputCooldown = 15;
         }
     }
+}
+
+bool MainWindow::isKeyboardOpen() const {
+    return keyboardInstance != nullptr && keyboardInstance->isOpen();
 }
 
 void MainWindow::OnGameTitleListChanged(GameList *list) {
@@ -197,7 +219,7 @@ void MainWindow::drawDrc(CVideo *video) {
         }
     }
 
-    if (keyboardInstance != nullptr) {
+    if (keyboardInstance != nullptr && keyboardInstance->isReady()) {
         keyboardInstance->drawDRC();
     }
 }
@@ -213,7 +235,7 @@ void MainWindow::drawTv(CVideo *video) {
             pointerValid[i] = false;
         }
     }
-    if (keyboardInstance != nullptr) {
+    if (keyboardInstance != nullptr && keyboardInstance->isReady()) {
         keyboardInstance->drawTV();
     }
 }
@@ -293,7 +315,7 @@ void MainWindow::OnGameListFilterButtonClicked(GuiElement *element) {
     if (keyboardInstance == nullptr) {
         keyboardInstance = new KeyboardHelper();
     }
-    if (keyboardInstance->isReady()) {
+    if (keyboardInstance->isReady() && !keyboardInstance->isOpen()) {
         if (keyboardInstance->openKeyboard()) {
             currentTvFrame->setState(GuiElement::STATE_DISABLED);
             currentDrcFrame->setState(GuiElement::STATE_DISABLED);
@@ -367,9 +389,14 @@ void MainWindow::OnGameSelectionChange(GuiTitleBrowser *element, uint64_t select
 }
 
 void MainWindow::OnGameLaunchSplashScreen(GuiTitleBrowser *element, uint64_t titleID) {
-    DEBUG_FUNCTION_LINE("");
+    if (launchInProgress) {
+        //! A pressed twice, or touch + button in the same frame
+        DEBUG_FUNCTION_LINE("Launch already in progress, ignoring %016llX", titleID);
+        return;
+    }
     gameInfo *info = gameList.getGameInfo(titleID);
     if (info != nullptr) {
+        launchInProgress = true;
         auto *splashScreenDRC = new GameSplashScreen(width, height, info, false);
         splashScreenDRC->setEffect(EFFECT_FADE, 15, 255);
         splashScreenDRC->setState(GuiElement::STATE_DISABLED);
@@ -393,7 +420,11 @@ void MainWindow::OnGameLaunchSplashScreenFinished(GuiElement *element, gameInfo 
         return;
     }
     if (launchGame) {
-        OnGameLaunch(info->titleId);
+        //! when a full title launch was started this process is about to exit.
+        //! For everything else (failure, applets that put us into background) allow launching again.
+        if (!OnGameLaunch(info->titleId)) {
+            launchInProgress = false;
+        }
     }
     if (element) {
         // immediately remove the splashScreen
@@ -405,14 +436,14 @@ extern "C" int32_t SYSSwitchToBrowser(void *);
 extern "C" int32_t SYSSwitchToEShop(void *);
 extern "C" int32_t _SYSSwitchTo(uint32_t pfid);
 
-void MainWindow::OnGameLaunch(uint64_t titleId) {
+bool MainWindow::OnGameLaunch(uint64_t titleId) {
     DEBUG_FUNCTION_LINE("Launch GAME!!");
 
     if (titleId == 0x0005001010040000L ||
         titleId == 0x0005001010040100L ||
         titleId == 0x0005001010040200L) {
         DEBUG_FUNCTION_LINE("Skip launching the Wii U Menu");
-        return;
+        return false;
     }
 
     if (titleId == 0x000500301001220AL ||
@@ -420,7 +451,7 @@ void MainWindow::OnGameLaunch(uint64_t titleId) {
         titleId == 0x000500301001200AL) {
         DEBUG_FUNCTION_LINE("Launching the browser");
         SYSSwitchToBrowser(nullptr);
-        return;
+        return false;
     }
     if (titleId == 0x000500301001400AL ||
         titleId == 0x000500301001410AL ||
@@ -428,35 +459,35 @@ void MainWindow::OnGameLaunch(uint64_t titleId) {
         DEBUG_FUNCTION_LINE("Launching the Eshop");
         SYSSwitchToEShop(nullptr);
 
-        return;
+        return false;
     }
     if (titleId == 0x000500301001800AL ||
         titleId == 0x000500301001810AL ||
         titleId == 0x000500301001820AL) {
         DEBUG_FUNCTION_LINE("Launching the Download Management");
         _SYSSwitchTo(12);
-        return;
+        return false;
     }
     if (titleId == 0x000500301001600AL ||
         titleId == 0x000500301001610AL ||
         titleId == 0x000500301001620AL) {
         DEBUG_FUNCTION_LINE("Launching Miiverse");
         _SYSSwitchTo(9);
-        return;
+        return false;
     }
     if (titleId == 0x000500301001500AL ||
         titleId == 0x000500301001510AL ||
         titleId == 0x000500301001520AL) {
         DEBUG_FUNCTION_LINE("Launching Friendlist");
         _SYSSwitchTo(11);
-        return;
+        return false;
     }
     if (titleId == 0x000500301001300AL ||
         titleId == 0x000500301001310AL ||
         titleId == 0x000500301001320AL) {
         DEBUG_FUNCTION_LINE("Launching TVii");
         _SYSSwitchTo(3);
-        return;
+        return false;
     }
 
     MCPTitleListType titleInfo;
@@ -466,8 +497,9 @@ void MainWindow::OnGameLaunch(uint64_t titleId) {
     if (err == 0) {
         ACPAssignTitlePatch(&titleInfo);
         _SYSLaunchTitleWithStdArgsInNoSplash(titleId, nullptr);
-        return;
+        return true;
     }
 
     DEBUG_FUNCTION_LINE("Failed launch titleId %016llX", titleId);
+    return false;
 }

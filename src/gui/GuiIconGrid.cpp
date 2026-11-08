@@ -146,20 +146,90 @@ GuiIconGrid::~GuiIconGrid() {
 }
 
 int32_t GuiIconGrid::offsetForTitleId(uint64_t titleId) {
-    int32_t offset = -1;
-    positionMutex.lock();
-    for (uint32_t i = 0; i < position.size(); i++) {
-        if (position.at(i) == titleId) {
-            offset = i;
-            break;
+    if (titleId == 0) {
+        return -1;
+    }
+    auto layout = currentLayout();
+    for (uint32_t i = 0; i < layout.size(); i++) {
+        if (layout[i] == titleId) {
+            return i;
         }
     }
-    positionMutex.unlock();
-    return offset;
+    return -1;
+}
+
+static std::string toLowerAscii(const std::string &in) {
+    std::string out = in;
+    for (auto &c : out) {
+        if (c >= 'A' && c <= 'Z') {
+            c = c - 'A' + 'a';
+        }
+    }
+    return out;
+}
+
+bool GuiIconGrid::matchesFilter(const gameInfo *info) const {
+    if (filterText.empty()) {
+        return true;
+    }
+    if (info == nullptr) {
+        return false;
+    }
+    return toLowerAscii(info->name).find(filterText) != std::string::npos;
+}
+
+std::vector<uint64_t> GuiIconGrid::currentLayout() {
+    std::lock_guard<std::recursive_mutex> positionLock(positionMutex);
+    if (filterText.empty()) {
+        return position;
+    }
+    //! filtered view: matching titles in the user's order, without gaps
+    std::vector<uint64_t> result;
+    std::lock_guard<std::recursive_mutex> containerLock(containerMutex);
+    for (auto titleId : position) {
+        if (titleId == 0) {
+            continue;
+        }
+        auto it = gameInfoContainers.find(titleId);
+        if (it != gameInfoContainers.end() && matchesFilter(it->second->info)) {
+            result.push_back(titleId);
+        }
+    }
+    return result;
+}
+
+uint64_t GuiIconGrid::firstTitleInLayout() {
+    for (auto titleId : currentLayout()) {
+        if (titleId != 0) {
+            return titleId;
+        }
+    }
+    return 0;
+}
+
+void GuiIconGrid::setFilter(const std::string &filter) {
+    std::string newFilter = toLowerAscii(filter);
+    if (newFilter == filterText) {
+        return;
+    }
+    filterText = newFilter;
+
+    curPage          = 0;
+    bUpdatePositions = true;
+
+    uint64_t first = firstTitleInLayout();
+    setSelectedGame(first);
+    if (first == 0 && !filterText.empty()) {
+        std::string text = "No matches for \"" + filter + "\"";
+        gameTitle.setText(text.c_str());
+    }
 }
 
 void GuiIconGrid::setSelectedGame(uint64_t idx) {
     this->selectedGame = idx;
+    if (idx == 0) {
+        gameTitle.setText("");
+    }
 
     containerMutex.lock();
     GameInfoContainer *container = nullptr;
@@ -175,7 +245,7 @@ void GuiIconGrid::setSelectedGame(uint64_t idx) {
     containerMutex.unlock();
 
     int32_t offset = offsetForTitleId(getSelectedGame());
-    if (offset > 0) {
+    if (offset >= 0) {
         uint32_t newPage = offset / (MAX_COLS * MAX_ROWS);
         if (newPage != (uint32_t) curPage) {
             curPage          = newPage;
@@ -231,7 +301,15 @@ void GuiIconGrid::OnGameTitleListUpdated(GameList *gameList) {
     positionMutex.unlock();
     containerMutex.unlock();
     gameList->unlock();
-    setSelectedGame(0);
+
+    uint64_t newSelection = selectedGame;
+    containerMutex.lock();
+    bool selectionExists = gameInfoContainers.find(selectedGame) != gameInfoContainers.end();
+    containerMutex.unlock();
+    if (!selectionExists || !matchesFilter(gameInfoContainers[selectedGame]->info)) {
+        newSelection = firstTitleInLayout();
+    }
+    setSelectedGame(newSelection);
     gameSelectionChanged(this, selectedGame);
     curPage             = 0;
     currentLeftPosition = 0;
@@ -251,6 +329,7 @@ void GuiIconGrid::OnRightArrowClick(GuiButton *button, const GuiController *cont
 }
 
 void GuiIconGrid::OnLeftClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    auto layout    = currentLayout();
     int32_t offset = offsetForTitleId(getSelectedGame());
     if (offset < 0) {
         return;
@@ -260,10 +339,10 @@ void GuiIconGrid::OnLeftClick(GuiButton *button, const GuiController *controller
     } else {
         offset--;
     }
-    if (offset < 0 || position.empty()) {
+    if (offset < 0 || layout.empty()) {
         return;
     }
-    uint64_t newTitleId = position.at(offset);
+    uint64_t newTitleId = layout.at(offset);
     if (newTitleId > 0) {
         setSelectedGame(newTitleId);
         gameSelectionChanged(this, selectedGame);
@@ -271,6 +350,7 @@ void GuiIconGrid::OnLeftClick(GuiButton *button, const GuiController *controller
 }
 
 void GuiIconGrid::OnRightClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    auto layout    = currentLayout();
     int32_t offset = offsetForTitleId(getSelectedGame());
     if (offset < 0) {
         return;
@@ -280,10 +360,10 @@ void GuiIconGrid::OnRightClick(GuiButton *button, const GuiController *controlle
     } else {
         offset++;
     }
-    if ((uint32_t) offset >= position.size()) {
+    if ((uint32_t) offset >= layout.size()) {
         return;
     }
-    uint64_t newTitleId = position.at(offset);
+    uint64_t newTitleId = layout.at(offset);
     if (newTitleId > 0) {
         setSelectedGame(newTitleId);
         gameSelectionChanged(this, selectedGame);
@@ -291,6 +371,7 @@ void GuiIconGrid::OnRightClick(GuiButton *button, const GuiController *controlle
 }
 
 void GuiIconGrid::OnDownClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    auto layout    = currentLayout();
     int32_t offset = offsetForTitleId(getSelectedGame());
     if (offset < 0) {
         return;
@@ -301,10 +382,10 @@ void GuiIconGrid::OnDownClick(GuiButton *button, const GuiController *controller
         return;
     }
 
-    if ((uint32_t) offset >= position.size()) {
+    if ((uint32_t) offset >= layout.size()) {
         return;
     }
-    uint64_t newTitleId = position.at(offset);
+    uint64_t newTitleId = layout.at(offset);
     if (newTitleId > 0) {
         setSelectedGame(newTitleId);
         gameSelectionChanged(this, selectedGame);
@@ -312,6 +393,7 @@ void GuiIconGrid::OnDownClick(GuiButton *button, const GuiController *controller
 }
 
 void GuiIconGrid::OnUpClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    auto layout    = currentLayout();
     int32_t offset = offsetForTitleId(getSelectedGame());
     if (offset < 0) {
         return;
@@ -325,7 +407,7 @@ void GuiIconGrid::OnUpClick(GuiButton *button, const GuiController *controller, 
     if (offset < 0) {
         return;
     }
-    uint64_t newTitleId = position.at(offset);
+    uint64_t newTitleId = layout.at(offset);
     if (newTitleId > 0) {
         setSelectedGame(newTitleId);
         gameSelectionChanged(this, selectedGame);
@@ -337,8 +419,17 @@ void GuiIconGrid::OnLaunchClick(GuiButton *button, const GuiController *controll
     if ((trigger == &buttonATrigger) && (controller->chan & (GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5)) && controller->data.validPointer) {
         return;
     }
-    DEBUG_FUNCTION_LINE("Tried to launch %s (%016llX)", gameInfoContainers[getSelectedGame()]->info->name.c_str(), getSelectedGame());
-    gameLaunchClicked(this, getSelectedGame());
+    uint64_t titleId = getSelectedGame();
+    containerMutex.lock();
+    auto it          = gameInfoContainers.find(titleId);
+    bool valid       = it != gameInfoContainers.end() && it->second->info != nullptr;
+    containerMutex.unlock();
+    if (!valid) {
+        DEBUG_FUNCTION_LINE("Nothing selected (%016llX), ignoring launch", titleId);
+        return;
+    }
+    DEBUG_FUNCTION_LINE("Tried to launch %s (%016llX)", it->second->info->name.c_str(), titleId);
+    gameLaunchClicked(this, titleId);
 }
 
 
@@ -490,6 +581,9 @@ void GuiIconGrid::OnGameTitleUpdated(gameInfo *info) {
     // keep the lock to delay the draw() until the image data is ready.
     if (container != nullptr) {
         container->updateImageData();
+        if (info->titleId == selectedGame) {
+            gameTitle.setText(info->name.c_str());
+        }
     }
 
     containerMutex.unlock();
@@ -529,13 +623,13 @@ void GuiIconGrid::process() {
                         break;
                     }
                 }
-                if (currentlyHeldPosition >= 0 && currentlyHeldPosition <= (int32_t) position.size()) {
+                if (currentlyHeldPosition >= 0 && currentlyHeldPosition < (int32_t) position.size()) {
                     position[currentlyHeldPosition] = targetTitleId;
                 }
 
                 dragTarget = nullptr;
             } else {
-                if (currentlyHeldPosition >= 0 && currentlyHeldPosition <= (int32_t) position.size()) {
+                if (currentlyHeldPosition >= 0 && currentlyHeldPosition < (int32_t) position.size()) {
                     position[currentlyHeldPosition] = currentlyHeldTitleId;
                 }
             }
@@ -630,9 +724,12 @@ void GuiIconGrid::updateButtonPositions() {
         }
     }
 
-    uint32_t elementSize = position.size();
+    const bool filtering                 = !filterText.empty();
+    const std::vector<uint64_t> &layout = filtering ? currentLayout() : position;
+
+    uint32_t elementSize = layout.size();
     uint32_t pages       = (elementSize / (MAX_COLS * MAX_ROWS)) + 1;
-    if (elementSize % (MAX_COLS * MAX_ROWS) == 0) {
+    if (elementSize % (MAX_COLS * MAX_ROWS) == 0 && pages > 1) {
         pages--;
     }
 
@@ -641,8 +738,8 @@ void GuiIconGrid::updateButtonPositions() {
     if (curPage < 0) {
         curPage = 0;
     }
-    if ((uint32_t) curPage > pages) {
-        curPage = 0;
+    if ((uint32_t) curPage >= pages) {
+        curPage = pages - 1;
     }
 
     targetLeftPosition = -curPage * getWidth();
@@ -671,7 +768,7 @@ void GuiIconGrid::updateButtonPositions() {
         }
     } else {
         for (auto const &x : vec) {
-            x.second->button->setHoldable(true);
+            x.second->button->setHoldable(!filtering);
         }
     }
     uint32_t startValue = startPage * (MAX_COLS * MAX_ROWS);
@@ -687,8 +784,8 @@ void GuiIconGrid::updateButtonPositions() {
         float posX         = currentLeftPosition + listOff * width + (col * (noIcon.getWidth() + noIcon.getWidth() * 0.5f) - (MAX_COLS * 0.5f - 0.5f) * (noIcon.getWidth() + noIcon.getWidth() * 0.5f));
         float posY         = -row * (noIcon.getHeight() + noIcon.getHeight() * 0.5f) + (MAX_ROWS * 0.5f - 0.5f) * (noIcon.getHeight() + noIcon.getHeight() * 0.5f) + 30.0f;
 
-        if (i < position.size()) {
-            uint64_t titleID = position.at(i);
+        if (i < layout.size()) {
+            uint64_t titleID = layout.at(i);
             if (titleID > 0) {
                 GameInfoContainer *container = nullptr;
                 containerMutex.lock();
@@ -725,7 +822,7 @@ void GuiIconGrid::updateButtonPositions() {
     if (currentlyHeld != nullptr) {
         append(currentlyHeld);
     }
-    if (positionButtons.size() > position.size() && targetLeftPosition == currentLeftPosition) {
+    if (!filtering && positionButtons.size() > position.size() && targetLeftPosition == currentLeftPosition) {
         for (uint32_t i = 0; i < positionButtons.size() - position.size(); i++) {
             position.push_back(0);
         }

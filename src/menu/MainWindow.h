@@ -113,6 +113,12 @@ public:
 
     void process();
 
+    bool isKeyboardOpen() const;
+
+    bool isInputBlocked() const {
+        return inputCooldown > 0;
+    }
+
     void lockGUI() {
         guiMutex.lock();
     }
@@ -128,7 +134,7 @@ private:
 
     void OnCloseEffectFinish(GuiElement *element);
 
-    static void OnGameLaunch(uint64_t titleId);
+    static bool OnGameLaunch(uint64_t titleId);
 
     void OnGameLaunchSplashScreenFinished(GuiElement *element, gameInfo *info, bool launchGame);
 
@@ -169,6 +175,8 @@ private:
 
     std::recursive_mutex guiMutex;
     KeyboardHelper *keyboardInstance = nullptr;
+    bool launchInProgress            = false;
+    uint32_t inputCooldown           = 0;
 };
 
 #endif //_MAIN_WINDOW_H_

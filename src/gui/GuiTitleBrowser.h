@@ -3,6 +3,7 @@
 #include "game/GameList.h"
 #include <gui/Gui.h>
 #include <gui/sigslot.h>
+#include <string>
 
 class GuiTitleBrowser : public GuiFrame {
 public:
@@ -19,6 +20,9 @@ public:
     virtual void OnGameTitleUpdated(gameInfo *info) = 0;
 
     virtual void OnGameTitleAdded(gameInfo *info) = 0;
+
+    //! show only titles whose name contains the filter (case insensitive), empty shows all
+    virtual void setFilter(const std::string &filter) {}
 
     sigslot::signal2<GuiTitleBrowser *, uint64_t> gameLaunchClicked;
     sigslot::signal2<GuiTitleBrowser *, uint64_t> gameSelectionChanged;

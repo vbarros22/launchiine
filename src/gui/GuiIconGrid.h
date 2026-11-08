@@ -48,7 +48,18 @@ public:
 
     void OnGameTitleAdded(gameInfo *info);
 
+    void setFilter(const std::string &filter) override;
+
 private:
+    //! titles in display order; the user's order, or only the matches while a filter is active
+    std::vector<uint64_t> currentLayout();
+
+    uint64_t firstTitleInLayout();
+
+    bool matchesFilter(const gameInfo *info) const;
+
+    std::string filterText;
+
     static const int32_t MAX_ROWS = 3;
     static const int32_t MAX_COLS = 5;
 
