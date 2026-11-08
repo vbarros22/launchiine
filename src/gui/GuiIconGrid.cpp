@@ -27,7 +27,6 @@
 
 GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByName)
     : GuiTitleBrowser(w, h, GameIndex),
-      sortByName(sortByName),
       particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(1.0f)),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
@@ -39,7 +38,7 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
       arrowRightImageData(Resources::GetImageData("rightArrow.png")), arrowLeftImageData(Resources::GetImageData("leftArrow.png")), arrowRightImage(arrowRightImageData),
       arrowLeftImage(arrowLeftImageData), arrowRightButton(arrowRightImage.getWidth(), arrowRightImage.getHeight()), arrowLeftButton(arrowLeftImage.getWidth(), arrowLeftImage.getHeight()),
       noIcon(Resources::GetFile("noGameIcon.png"), Resources::GetFileSize("noGameIcon.png"), GX2_TEX_CLAMP_MODE_MIRROR),
-      emptyIcon(Resources::GetFile("iconEmpty.png"), Resources::GetFileSize("iconEmpty.png"), GX2_TEX_CLAMP_MODE_MIRROR), dragListener(w, h) {
+      emptyIcon(Resources::GetFile("iconEmpty.png"), Resources::GetFileSize("iconEmpty.png"), GX2_TEX_CLAMP_MODE_MIRROR) {
 
     particleBgImage.setParent(this);
     //! GameIndex is the title id to select once the list is loaded
@@ -76,11 +75,8 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     arrowLeftButton.setTrigger(&touchTrigger);
     arrowLeftButton.setTrigger(&wpadTouchTrigger);
     arrowLeftButton.setTrigger(&buttonLTrigger);
-    arrowLeftButton.setHoldable(true);
     arrowLeftButton.setSoundClick(buttonClickSound);
     arrowLeftButton.clicked.connect(this, &GuiIconGrid::OnLeftArrowClick);
-    arrowLeftButton.held.connect(this, &GuiIconGrid::OnLeftArrowHeld);
-    arrowLeftButton.released.connect(this, &GuiIconGrid::OnLeftArrowReleased);
 
     append(&arrowLeftButton);
 
@@ -91,11 +87,8 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     arrowRightButton.setTrigger(&touchTrigger);
     arrowRightButton.setTrigger(&wpadTouchTrigger);
     arrowRightButton.setTrigger(&buttonRTrigger);
-    arrowRightButton.setHoldable(true);
     arrowRightButton.setSoundClick(buttonClickSound);
     arrowRightButton.clicked.connect(this, &GuiIconGrid::OnRightArrowClick);
-    arrowRightButton.held.connect(this, &GuiIconGrid::OnRightArrowHeld);
-    arrowRightButton.released.connect(this, &GuiIconGrid::OnRightArrowReleased);
     append(&arrowRightButton);
 
     // at most we are rendering 2 screens at the same time
@@ -106,22 +99,13 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
         button->setImage(image);
         button->setPosition(0, 0);
         //button->setEffectGrow();
-        button->setHoldable(true);
         button->setTrigger(&touchTrigger);
-        button->held.connect(this, &GuiIconGrid::OnGameButtonHeld);
         emptyButtons.push_back(button);
     }
 
-    dragListener.setTrigger(&touchTrigger);
-    dragListener.setTrigger(&wpadTouchTrigger);
-    dragListener.dragged.connect(this, &GuiIconGrid::OnDrag);
-
-    append(&dragListener);
-
     gameTitle.setPosition(0, -320);
     gameTitle.setBlurGlowColor(5.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
-    gameTitle.setMaxWidth(900, GuiText::DOTTED);
-    gameTitle.setText("");
+    setTitleText("");
     append(&gameTitle);
 }
 
@@ -242,6 +226,79 @@ static std::string displayName(const gameInfo *info) {
     return result.empty() ? info->name : result;
 }
 
+//! Shrinks the font until the whole name fits above the grid, cutting it with "..." only
+//! when even the smallest size is too wide. Sizes are even numbers so the font keeps few
+//! glyph caches.
+void GuiIconGrid::setTitleText(const std::string &text) {
+    constexpr int32_t MAX_WIDTH = 1150;
+    constexpr int32_t MAX_SIZE  = 52;
+    constexpr int32_t MIN_SIZE  = 30;
+
+    gameTitle.setMaxWidth(0, GuiText::DOTTED); // measure without clamping
+    gameTitle.setFontSize(MAX_SIZE);
+    gameTitle.setText(text.c_str());
+
+    int32_t width = gameTitle.getTextWidth();
+    if (width > MAX_WIDTH) {
+        int32_t size = (MAX_SIZE * MAX_WIDTH / width) & ~1;
+        size         = std::max(size, MIN_SIZE);
+        gameTitle.setFontSize(size);
+        while (size > MIN_SIZE && gameTitle.getTextWidth() > MAX_WIDTH) {
+            size -= 2;
+            gameTitle.setFontSize(size);
+        }
+    }
+    gameTitle.setMaxWidth(MAX_WIDTH, GuiText::DOTTED);
+}
+
+//! System apps (System Settings, eShop, ...) first, then games, each group sorted by the
+//! full name.
+static bool isSystemTitle(const gameInfo *info) {
+    return info->appType != MCP_APP_TYPE_GAME && info->appType != MCP_APP_TYPE_GAME_WII;
+}
+
+void GuiIconGrid::resortPositions() {
+    struct Entry {
+        bool system;
+        std::string key;
+        uint64_t titleId;
+    };
+    std::vector<Entry> entries;
+    containerMutex.lock();
+    for (auto &x : gameInfoContainers) {
+        const gameInfo *info = x.second->info;
+        entries.push_back({isSystemTitle(info), normalizeForSearch(displayName(info)), x.first});
+    }
+    containerMutex.unlock();
+
+    std::sort(entries.begin(), entries.end(), [](const Entry &l, const Entry &r) {
+        if (l.system != r.system) {
+            return l.system;
+        }
+        if (l.key != r.key) {
+            return l.key < r.key;
+        }
+        return l.titleId < r.titleId;
+    });
+
+    std::vector<uint64_t> newPosition;
+    newPosition.reserve(entries.size());
+    for (auto &entry : entries) {
+        newPosition.push_back(entry.titleId);
+    }
+
+    positionMutex.lock();
+    bool changed = newPosition != position;
+    position.swap(newPosition);
+    positionMutex.unlock();
+
+    if (changed) {
+        bUpdatePositions = true;
+        //! keep the selection on screen when it moved to another page
+        setSelectedGame(selectedGame);
+    }
+}
+
 bool GuiIconGrid::matchesFilter(const gameInfo *info) const {
     if (filterWords.empty()) {
         return true;
@@ -307,14 +364,14 @@ void GuiIconGrid::setFilter(const std::string &filter) {
     setSelectedGame(first);
     if (first == 0 && !filterText.empty()) {
         std::string text = "No matches for \"" + filter + "\"";
-        gameTitle.setText(text.c_str());
+        setTitleText(text);
     }
 }
 
 void GuiIconGrid::setSelectedGame(uint64_t idx) {
     this->selectedGame = idx;
     if (idx == 0) {
-        gameTitle.setText("");
+        setTitleText("");
     }
 
     containerMutex.lock();
@@ -323,7 +380,7 @@ void GuiIconGrid::setSelectedGame(uint64_t idx) {
         container = x.second;
         if (x.first == idx) {
             container->image->setSelected(true);
-            gameTitle.setText(displayName(container->info).c_str());
+            setTitleText(displayName(container->info));
         } else {
             container->image->setSelected(false);
         }
@@ -387,6 +444,9 @@ void GuiIconGrid::OnGameTitleListUpdated(GameList *gameList) {
     positionMutex.unlock();
     containerMutex.unlock();
     gameList->unlock();
+
+    bResort = false;
+    resortPositions();
 
     uint64_t newSelection = selectedGame;
     containerMutex.lock();
@@ -560,69 +620,10 @@ void GuiIconGrid::OnLaunchClick(GuiButton *button, const GuiController *controll
 }
 
 
-void GuiIconGrid::OnLeftArrowHeld(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
-    if (currentlyHeld != nullptr) {
-        if (lArrowHeldCounter++ > 30) {
-            OnLeftArrowClick(button, controller, trigger);
-            lArrowHeldCounter = 0;
-        }
-    } else {
-        lArrowHeldCounter = 0;
-    }
-}
-
-void GuiIconGrid::OnLeftArrowReleased(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
-    lArrowHeldCounter = 0;
-}
-
-void GuiIconGrid::OnRightArrowHeld(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
-    if (currentlyHeld != nullptr) {
-        if (rArrowHeldCounter++ > 30) {
-            DEBUG_FUNCTION_LINE("CLICK");
-            OnRightArrowClick(button, controller, trigger);
-            rArrowHeldCounter = 0;
-        }
-    } else {
-        rArrowHeldCounter = 0;
-    }
-}
-
-void GuiIconGrid::OnRightArrowReleased(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
-    rArrowHeldCounter = 0;
-}
-
-
-void GuiIconGrid::OnGameButtonHeld(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
-    if (currentlyHeld == nullptr) {
-        bool found = false;
-        // We don't want to drag empty buttons
-        for (auto const &x : emptyButtons) {
-            if (x == button) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            currentlyHeld = button;
-        }
-    }
-    if (currentlyHeld != nullptr && currentlyHeld != button) {
-        dragTarget = button;
-    }
-}
-
 void GuiIconGrid::OnGameButtonPointedOn(GuiButton *button, const GuiController *controller) {
 }
 
 void GuiIconGrid::OnGameButtonPointedOff(GuiButton *button, const GuiController *controller) {
-}
-
-void GuiIconGrid::OnDrag(GuiDragListener *element, const GuiController *controller, GuiTrigger *trigger, int32_t dx, int32_t dy) {
-    if (currentlyHeld != nullptr) {
-        currentlyHeld->setPosition(currentlyHeld->getOffsetX() + dx, currentlyHeld->getOffsetY() + dy);
-    }
-    // reset the target when we move.
-    dragTarget = nullptr;
 }
 
 void GuiIconGrid::OnGameButtonClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
@@ -665,11 +666,8 @@ void GuiIconGrid::OnGameTitleAdded(gameInfo *info) {
     //button->setClickable( (idx < gameList->size()) );
     //button->setSelectable( (idx < gameList->size()) );
     button->clicked.connect(this, &GuiIconGrid::OnGameButtonClick);
-    button->setHoldable(true);
-    button->held.connect(this, &GuiIconGrid::OnGameButtonHeld);
     button->pointedOn.connect(this, &GuiIconGrid::OnGameButtonPointedOn);
     button->pointedOff.connect(this, &GuiIconGrid::OnGameButtonPointedOff);
-    //button->dragged.connect(this, &GuiIconGrid::OnGameButtonDragged);
 
     GameInfoContainer *container = new GameInfoContainer(button, image, info);
     containerMutex.lock();
@@ -678,19 +676,10 @@ void GuiIconGrid::OnGameTitleAdded(gameInfo *info) {
     this->append(button);
 
     positionMutex.lock();
-    bool foundFreePlace = false;
-    for (uint32_t i = 0; i < position.size(); i++) {
-        if (position[i] == 0) {
-            position[i]    = info->titleId;
-            foundFreePlace = true;
-            break;
-        }
-    }
-    if (!foundFreePlace) {
-        position.push_back(info->titleId);
-    }
+    position.push_back(info->titleId);
     positionMutex.unlock();
 
+    bResort          = true;
     bUpdatePositions = true;
 }
 
@@ -709,67 +698,20 @@ void GuiIconGrid::OnGameTitleUpdated(gameInfo *info) {
     if (container != nullptr) {
         container->updateImageData();
         if (info->titleId == selectedGame) {
-            gameTitle.setText(displayName(info).c_str());
+            setTitleText(displayName(info));
         }
     }
 
     containerMutex.unlock();
 
+    bResort          = true;
     bUpdatePositions = true;
 }
 
 void GuiIconGrid::process() {
-    if (currentlyHeld != nullptr) {
-        if (!currentlyHeld->isStateSet(GuiElement::STATE_HELD)) {
-            DEBUG_FUNCTION_LINE("Not held anymore");
-            positionMutex.lock();
-            if (dragTarget) {
-                DEBUG_FUNCTION_LINE("Let's swap");
-
-                std::vector<std::pair<uint64_t, GameInfoContainer *>> vec;
-                containerMutex.lock();
-                // copy key-value pairs from the map to the vector
-                std::copy(gameInfoContainers.begin(), gameInfoContainers.end(), std::back_inserter<std::vector<std::pair<uint64_t, GameInfoContainer *>>>(vec));
-                containerMutex.unlock();
-                uint64_t targetTitleId = 0;
-                for (auto const &x : vec) {
-                    if (x.second->button == dragTarget) {
-                        targetTitleId = x.first;
-                        break;
-                    }
-                }
-                for (uint32_t i = 0; i < positionButtons.size(); i++) {
-                    if (positionButtons[i] == dragTarget) {
-                        if (i < position.size() && (int32_t) i != currentlyHeldPosition) {
-                            position[i] = currentlyHeldTitleId;
-                            DEBUG_FUNCTION_LINE("Set position to title id to %d", i, currentlyHeldPosition);
-                        } else {
-                            targetTitleId = currentlyHeldTitleId;
-                        }
-
-                        break;
-                    }
-                }
-                if (currentlyHeldPosition >= 0 && currentlyHeldPosition < (int32_t) position.size()) {
-                    position[currentlyHeldPosition] = targetTitleId;
-                }
-
-                dragTarget = nullptr;
-            } else {
-                if (currentlyHeldPosition >= 0 && currentlyHeldPosition < (int32_t) position.size()) {
-                    position[currentlyHeldPosition] = currentlyHeldTitleId;
-                }
-            }
-            positionMutex.unlock();
-            currentlyHeld        = nullptr;
-            currentlyHeldTitleId = 0;
-
-            currentlyHeldPosition = -1;
-            bUpdatePositions      = true;
-        } else {
-            //DEBUG_FUNCTION_LINE("Holding it");
-            bUpdatePositions = true;
-        }
+    if (bResort) {
+        bResort = false;
+        resortPositions();
     }
 
     if (currentLeftPosition < targetLeftPosition) {
@@ -821,34 +763,11 @@ void GuiIconGrid::updateButtonPositions() {
     containerMutex.unlock();
 
     for (auto const &x : vec) {
-        if (x.second->button == currentlyHeld) {
-            currentlyHeldTitleId = x.first;
-        }
         remove(x.second->button);
     }
 
     for (auto const &x : emptyButtons) {
         remove(x);
-    }
-
-    if (sortByName) {
-        std::sort(vec.begin(), vec.end(),
-                  [](const std::pair<uint64_t, GameInfoContainer *> &l, const std::pair<uint64_t, GameInfoContainer *> &r) {
-                      if (l.second != r.second)
-                          return l.second->info->name.compare(r.second->info->name) < 0;
-
-                      return l.first < r.first;
-                  });
-    }
-
-    // TODO somehow be able to adjust the positions.
-
-    //position.clear();
-    for (uint32_t i = 0; i < position.size(); i++) {
-        if (position[i] == currentlyHeldTitleId) {
-            currentlyHeldPosition = i;
-            position[i]           = 0;
-        }
     }
 
     const bool filtering                 = !filterText.empty();
@@ -886,16 +805,9 @@ void GuiIconGrid::updateButtonPositions() {
     uint32_t endPage   = startPage;
 
     if (targetLeftPosition != currentLeftPosition) {
-        for (auto const &x : vec) {
-            x.second->button->setHoldable(false);
-        }
         endPage++;
         if (endPage > pages) {
             endPage = pages;
-        }
-    } else {
-        for (auto const &x : vec) {
-            x.second->button->setHoldable(!filtering);
         }
     }
     uint32_t startValue = startPage * (MAX_COLS * MAX_ROWS);
@@ -944,14 +856,6 @@ void GuiIconGrid::updateButtonPositions() {
         }
         if (row >= MAX_ROWS) {
             row = 0;
-        }
-    }
-    if (currentlyHeld != nullptr) {
-        append(currentlyHeld);
-    }
-    if (!filtering && positionButtons.size() > position.size() && targetLeftPosition == currentLeftPosition) {
-        for (uint32_t i = 0; i < positionButtons.size() - position.size(); i++) {
-            position.push_back(0);
         }
     }
     positionMutex.unlock();

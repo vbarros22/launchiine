@@ -59,6 +59,13 @@ private:
     //! scroll by whole pages and take the selection along
     void changePage(int32_t delta);
 
+    //! alphabetical order (system apps first), recomputed when names change
+    void resortPositions();
+
+    void setTitleText(const std::string &text);
+
+    bool bResort = false;
+
     bool matchesFilter(const gameInfo *info) const;
 
     std::string filterText;
@@ -66,8 +73,6 @@ private:
 
     static const int32_t MAX_ROWS = 3;
     static const int32_t MAX_COLS = 5;
-
-    bool sortByName = false;
 
     GuiParticleImage particleBgImage;
 
@@ -99,8 +104,6 @@ private:
     GuiImageData noIcon;
     GuiImageData emptyIcon;
 
-    GuiDragListener dragListener;
-
     void OnLeftArrowClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
 
     void OnRightArrowClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
@@ -117,28 +120,14 @@ private:
 
     void OnGameButtonClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
 
-    void OnGameButtonHeld(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
-
     void OnGameButtonPointedOn(GuiButton *button, const GuiController *controller);
 
     void OnGameButtonPointedOff(GuiButton *button, const GuiController *controller);
-
-    void OnDrag(GuiDragListener *button, const GuiController *controller, GuiTrigger *trigger, int32_t dx, int32_t dy);
-
-    void OnLeftArrowHeld(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
-
-    void OnRightArrowHeld(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
-
-    void OnLeftArrowReleased(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
-
-    void OnRightArrowReleased(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
 
     void updateButtonPositions();
 
     int32_t offsetForTitleId(uint64_t titleId);
 
-    uint32_t lArrowHeldCounter = 0;
-    uint32_t rArrowHeldCounter = 0;
 
     int32_t curPage = 0;
     int32_t listOffset;
@@ -147,10 +136,6 @@ private:
     int32_t targetLeftPosition;
     uint32_t gameLaunchTimer;
     bool bUpdatePositions         = false;
-    GuiButton *currentlyHeld      = nullptr;
-    uint64_t currentlyHeldTitleId = 0;
-    int32_t currentlyHeldPosition = -1;
-    GuiButton *dragTarget         = nullptr;
 
     class GameInfoContainer {
     public:
