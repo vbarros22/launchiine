@@ -14,7 +14,8 @@
 typedef struct _gameInfo {
     uint64_t titleId;
     MCPAppType appType;
-    std::string name;
+    std::string name;     // short name, shown in the menu
+    std::string longName; // full name, only used for search ("The Legend of Zelda: ...")
     std::string gamePath;
     GuiImageData *imageData;
 } gameInfo;
@@ -68,7 +69,8 @@ public:
     }
 
     //! Worker thread only. Returns early once stopLoading() was called.
-    int32_t load();
+    //! Details are loaded starting at the page that holds priorityTitleId.
+    int32_t load(uint64_t priorityTitleId = 0);
 
     //! Ask a running load() to stop after the current title. The caller has to wait for
     //! load() to return (MainWindow keeps the future of the loader thread).
@@ -99,13 +101,14 @@ protected:
         } type;
         gameInfo *info          = nullptr;
         std::string name        = "";
+        std::string longName    = "";
         bool hasName            = false;
         GuiImageData *imageData = nullptr;
     };
 
     int32_t readGameList();
 
-    void loadTitleDetails();
+    void loadTitleDetails(uint64_t priorityTitleId);
 
     void queueEvent(PendingEvent &&event);
 

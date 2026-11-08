@@ -47,7 +47,7 @@ MainWindow::MainWindow(int32_t w, int32_t h)
     gameList.titleUpdated.connect(this, &MainWindow::OnGameTitleUpdated);
     gameList.titleAdded.connect(this, &MainWindow::OnGameTitleAdded);
     //! own thread (not the AsyncExecutor) so we can stop and join it before launching a title
-    titleLoader = std::async(std::launch::async, [this] { gameList.load(); });
+    titleLoader = std::async(std::launch::async, [this] { gameList.load(startTitle); });
 }
 
 namespace {
@@ -288,6 +288,7 @@ void MainWindow::drawTv(CVideo *video) {
 void MainWindow::SetupMainView() {
     //! start on the title that was launched last
     uint64_t lastTitle = loadLastTitle();
+    startTitle         = lastTitle;
 
     currentTvFrame = new GuiIconGrid(width, height, lastTitle, true);
 

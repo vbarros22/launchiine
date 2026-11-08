@@ -231,7 +231,7 @@ bool GuiIconGrid::matchesFilter(const gameInfo *info) const {
         return false;
     }
     //! every typed word has to show up somewhere in the name, in any order
-    std::string name = normalizeForSearch(info->name);
+    std::string name = normalizeForSearch(info->name + " " + info->longName);
     for (auto &word : filterWords) {
         if (name.find(word) == std::string::npos) {
             return false;

@@ -3,7 +3,9 @@
 #include <coreinit/mcp.h>
 #include <coreinit/memexpheap.h>
 #include <coreinit/memheap.h>
+#include <coreinit/time.h>
 #include <coreinit/userconfig.h>
+#include <map>
 #include <malloc.h>
 #include <nn/acp/nn_acp_types.h>
 #include <nn/acp/title.h>
@@ -48,7 +50,12 @@ namespace {
         return cachedLanguage;
     }
 
-    bool readTitleName(uint64_t titleId, std::string &outName) {
+    std::string fixedString(const char *str, size_t maxLen) {
+        // the fields are fixed size arrays, never trust them to be terminated
+        return std::string(str, strnlen(str, maxLen));
+    }
+
+    bool readTitleName(uint64_t titleId, std::string &outName, std::string &outLongName) {
         auto *meta = (ACPMetaXml *) memalign(0x40, META_XML_BUFFER_SIZE);
         if (!meta) {
             return false;
@@ -70,13 +77,95 @@ namespace {
                 name = meta->shortname_ja;
             }
             if (name[0] != '\0') {
-                // the fields are fixed size arrays, never trust them to be terminated
-                outName = std::string(name, strnlen(name, sizeof(meta->shortname_en)));
+                outName = fixedString(name, sizeof(meta->shortname_en));
                 result  = true;
             }
+
+            const char *longNames[12] = {
+                    meta->longname_ja, meta->longname_en, meta->longname_fr,
+                    meta->longname_de, meta->longname_it, meta->longname_es,
+                    meta->longname_zhs, meta->longname_ko, meta->longname_nl,
+                    meta->longname_pt, meta->longname_ru, meta->longname_zht};
+            const char *longName = longNames[getSystemLanguage()];
+            if (longName[0] == '\0') {
+                longName = meta->longname_en;
+            }
+            outLongName = fixedString(longName, sizeof(meta->longname_en));
         }
         free(meta);
         return result;
+    }
+
+    constexpr const char *NAME_CACHE_DIR  = "fs:/vol/external01/wiiu/launchiine";
+    constexpr const char *NAME_CACHE_FILE = "fs:/vol/external01/wiiu/launchiine/names.txt";
+
+    struct CachedName {
+        std::string name;
+        std::string longName;
+    };
+
+    std::string sanitizeCacheField(const std::string &in) {
+        std::string out = in;
+        for (auto &c : out) {
+            if (c == '\t' || c == '\n' || c == '\r') {
+                c = ' ';
+            }
+        }
+        return out;
+    }
+
+    //! "TITLEID\tshort name\tlong name\n" per line
+    std::map<uint64_t, CachedName> loadNameCache() {
+        std::map<uint64_t, CachedName> result;
+        uint8_t *buffer = nullptr;
+        uint32_t size   = 0;
+        if (FSUtils::LoadFileToMem(NAME_CACHE_FILE, &buffer, &size) <= 0 || buffer == nullptr) {
+            return result;
+        }
+        std::string text((const char *) buffer, size);
+        free(buffer);
+
+        size_t lineStart = 0;
+        while (lineStart < text.size()) {
+            size_t lineEnd = text.find('\n', lineStart);
+            if (lineEnd == std::string::npos) {
+                lineEnd = text.size();
+            }
+            std::string line = text.substr(lineStart, lineEnd - lineStart);
+            lineStart        = lineEnd + 1;
+
+            size_t tab1 = line.find('\t');
+            size_t tab2 = tab1 == std::string::npos ? std::string::npos : line.find('\t', tab1 + 1);
+            if (tab2 == std::string::npos) {
+                continue;
+            }
+            uint64_t titleId = strtoull(line.substr(0, tab1).c_str(), nullptr, 16);
+            if (titleId != 0) {
+                result[titleId] = {line.substr(tab1 + 1, tab2 - tab1 - 1), line.substr(tab2 + 1)};
+            }
+        }
+        DEBUG_FUNCTION_LINE("Loaded %d cached names", (int) result.size());
+        return result;
+    }
+
+    void saveNameCache(const std::map<uint64_t, CachedName> &names) {
+        std::string text;
+        char id[20];
+        for (auto &entry : names) {
+            snprintf(id, sizeof(id), "%016llX", (unsigned long long) entry.first);
+            text += id;
+            text += '\t';
+            text += sanitizeCacheField(entry.second.name);
+            text += '\t';
+            text += sanitizeCacheField(entry.second.longName);
+            text += '\n';
+        }
+        FSUtils::CreateSubfolder(NAME_CACHE_DIR);
+        if (FSUtils::saveBufferToFile(NAME_CACHE_FILE, (void *) text.data(), text.size()) != (int32_t) text.size()) {
+            DEBUG_FUNCTION_LINE("Failed to save the name cache");
+        } else {
+            DEBUG_FUNCTION_LINE("Saved %d names to the cache", (int) names.size());
+        }
     }
 
     //! Re-encodes any TGA (uncompressed or RLE, 24/32 bit, any origin) as a plain
@@ -211,7 +300,6 @@ namespace {
             delete imageData;
             return nullptr;
         }
-        DEBUG_FUNCTION_LINE("%016llX: icon ok", titleId);
         return imageData;
     }
 } // namespace
@@ -282,7 +370,8 @@ void GameList::pollEvents() {
             case PendingEvent::TITLE_UPDATED: {
                 gameInfo *info = event.info;
                 if (event.hasName) {
-                    info->name = event.name;
+                    info->name     = event.name;
+                    info->longName = event.longName;
                 }
                 if (event.imageData != nullptr) {
                     if (info->imageData == nullptr) {
@@ -370,6 +459,16 @@ int32_t GameList::readGameList() {
         newList.push_back(newGameInfo);
     }
 
+    //! names from the last run, so the menu and search have them right away
+    auto cache = loadNameCache();
+    for (auto *info : newList) {
+        auto it = cache.find(info->titleId);
+        if (it != cache.end()) {
+            info->name     = it->second.name;
+            info->longName = it->second.longName;
+        }
+    }
+
     lock();
     fullGameList.swap(newList);
     int32_t cnt = fullGameList.size();
@@ -384,7 +483,7 @@ int32_t GameList::readGameList() {
     return cnt;
 }
 
-void GameList::loadTitleDetails() {
+void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     //! Take a snapshot so we don't hold the list lock while doing slow IO.
     //! The gameInfo pointers stay valid as long as the list is not cleared, which only
     //! happens in the destructor after this loader has stopped.
@@ -392,48 +491,75 @@ void GameList::loadTitleDetails() {
         gameInfo *info;
         uint64_t titleId;
         std::string gamePath;
+        std::string cachedName;
+        std::string cachedLongName;
     };
     std::vector<Job> jobs;
     lock();
     for (auto *info : fullGameList) {
-        jobs.push_back({info, info->titleId, info->gamePath});
+        jobs.push_back({info, info->titleId, info->gamePath, info->name, info->longName});
     }
     unlock();
 
-    //! Pass 1: names only. Cheap compared to decoding icons, and it makes search work
-    //! for every title as early as possible.
-    for (auto &job : jobs) {
-        if (stopAsyncLoading) {
-            DEBUG_FUNCTION_LINE("Stop async title loading (names)");
-            return;
-        }
-        PendingEvent event{PendingEvent::TITLE_UPDATED};
-        event.info    = job.info;
-        event.hasName = readTitleName(job.titleId, event.name);
-        DEBUG_FUNCTION_LINE("%016llX \"%s\"", job.titleId, event.hasName ? event.name.c_str() : "?");
-        if (event.hasName) {
-            queueEvent(std::move(event));
+    //! start with the page the menu opens on (15 icons per page), then the rest in order
+    constexpr size_t ICONS_PER_PAGE = 15;
+    for (size_t i = 0; i < jobs.size(); i++) {
+        if (jobs[i].titleId == priorityTitleId) {
+            size_t pageStart = (i / ICONS_PER_PAGE) * ICONS_PER_PAGE;
+            std::rotate(jobs.begin(), jobs.begin() + pageStart, jobs.end());
+            break;
         }
     }
-    DEBUG_FUNCTION_LINE("All names loaded");
 
-    //! Pass 2: icons, in list order so the first pages fill up first.
+    std::map<uint64_t, CachedName> freshNames;
+    bool cacheChanged = false;
+
+    OSTime start      = OSGetTime();
+    OSTime nameTicks  = 0;
+    OSTime iconTicks  = 0;
+    uint32_t iconsOk  = 0;
+
     for (auto &job : jobs) {
         if (stopAsyncLoading) {
-            DEBUG_FUNCTION_LINE("Stop async title loading (icons)");
+            DEBUG_FUNCTION_LINE("Stop async title loading");
             return;
         }
         PendingEvent event{PendingEvent::TITLE_UPDATED};
-        event.info      = job.info;
+        event.info = job.info;
+
+        OSTime t0     = OSGetTime();
+        event.hasName = readTitleName(job.titleId, event.name, event.longName);
+        OSTime t1     = OSGetTime();
         event.imageData = readTitleIcon(job.titleId, job.gamePath);
-        if (event.imageData != nullptr) {
+        OSTime t2       = OSGetTime();
+        nameTicks += t1 - t0;
+        iconTicks += t2 - t1;
+        if (event.imageData) {
+            iconsOk++;
+        }
+
+        if (event.hasName) {
+            freshNames[job.titleId] = {event.name, event.longName};
+            if (event.name != job.cachedName || event.longName != job.cachedLongName) {
+                cacheChanged = true;
+            }
+        }
+        if (event.hasName || event.imageData != nullptr) {
             queueEvent(std::move(event));
         }
     }
-    DEBUG_FUNCTION_LINE("All icons loaded");
+
+    DEBUG_FUNCTION_LINE("Loaded %d titles in %lld ms (names %lld ms, icons %lld ms), %u icons", (int) jobs.size(),
+                        OSTicksToMilliseconds(OSGetTime() - start), OSTicksToMilliseconds(nameTicks),
+                        OSTicksToMilliseconds(iconTicks), iconsOk);
+
+    //! also rewrite when titles were removed
+    if (cacheChanged || freshNames.size() != jobs.size()) {
+        saveNameCache(freshNames);
+    }
 }
 
-int32_t GameList::load() {
+int32_t GameList::load(uint64_t priorityTitleId) {
     int32_t res = 0;
     if (!stopAsyncLoading) {
         lock();
@@ -444,7 +570,7 @@ int32_t GameList::load() {
             readGameList();
         }
         res = size();
-        loadTitleDetails();
+        loadTitleDetails(priorityTitleId);
     }
     DEBUG_FUNCTION_LINE("Title loader finished (%d titles, stopped=%d)", res, (int) stopAsyncLoading);
     return res;

@@ -181,6 +181,7 @@ private:
 
     GameList gameList;
     std::future<void> titleLoader;
+    uint64_t startTitle = 0;
 
     std::recursive_mutex guiMutex;
     KeyboardHelper *keyboardInstance = nullptr;
