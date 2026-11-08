@@ -50,6 +50,14 @@ public:
 
     void setFilter(const std::string &filter) override;
 
+    std::vector<uint64_t> getDisplayOrder() override {
+        return currentLayout();
+    }
+
+    uint32_t getDisplayOrderVersion() override {
+        return displayOrderVersion;
+    }
+
 private:
     //! titles in display order; the user's order, or only the matches while a filter is active
     std::vector<uint64_t> currentLayout();
@@ -64,7 +72,8 @@ private:
 
     void setTitleText(const std::string &text);
 
-    bool bResort = false;
+    bool bResort                 = false;
+    uint32_t displayOrderVersion = 0;
 
     bool matchesFilter(const gameInfo *info) const;
 

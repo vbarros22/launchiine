@@ -3,6 +3,7 @@
 #include <coreinit/mcp.h>
 #include <coreinit/memexpheap.h>
 #include <coreinit/memheap.h>
+#include <coreinit/thread.h>
 #include <coreinit/time.h>
 #include <coreinit/userconfig.h>
 #include <map>
@@ -306,12 +307,13 @@ namespace {
             return false;
         }
 
-        DEBUG_FUNCTION_LINE("%016llX: icon %u bytes, type %u, %ux%u, %u bpp, free MEM2 %u KiB", titleId, bufferSize,
+        //! (no MEMGetTotalFreeSizeForExpHeap here: walking the heap from this thread while
+        //! others allocate is not safe)
+        DEBUG_FUNCTION_LINE("%016llX: icon %u bytes, type %u, %ux%u, %u bpp", titleId, bufferSize,
                             bufferSize >= 18 ? buffer[2] : 0,
                             bufferSize >= 18 ? (buffer[12] | (buffer[13] << 8)) : 0,
                             bufferSize >= 18 ? (buffer[14] | (buffer[15] << 8)) : 0,
-                            bufferSize >= 18 ? buffer[16] : 0,
-                            MEMGetTotalFreeSizeForExpHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM2)) / 1024);
+                            bufferSize >= 18 ? buffer[16] : 0);
 
         bool valid = sanitizeTga(buffer, bufferSize, outTga);
         free(buffer);
@@ -406,6 +408,7 @@ void GameList::pollEvents() {
                 if (!event.iconTga.empty()) {
                     texturesCreated++;
                     if (info->imageData == nullptr) {
+                        DEBUG_FUNCTION_LINE("%016llX: creating texture", info->titleId);
                         auto *imageData = new GuiImageData(event.iconTga.data(), event.iconTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
                         if (imageData->getTexture() != nullptr) {
                             info->imageData = imageData;
@@ -545,34 +548,43 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     unlock();
 
     //! Load the page that is on screen first, then spread outwards (next page, previous
-    //! page, ...). The focus follows the selection, so flipping pages while loading moves
-    //! the loader along. Jobs are in list order, which is the order of the icons.
+    //! page, ...). The focus follows the selection and the order is the one on screen
+    //! (setDisplayOrder), so flipping pages while loading moves the loader along.
     constexpr int32_t ICONS_PER_PAGE = 15;
     if (getFocusTitle() == 0) {
         setFocusTitle(priorityTitleId);
     }
+    //! give the render thread a moment to sort the list and report the order
+    for (int i = 0; i < 50 && getDisplayOrder().empty() && !stopAsyncLoading; i++) {
+        OSSleepTicks(OSMillisecondsToTicks(10));
+    }
     std::vector<bool> doneJob(jobs.size(), false);
     auto pickNextJob = [&]() -> int32_t {
-        uint64_t focus     = getFocusTitle();
-        int32_t focusIndex = 0;
-        for (size_t i = 0; i < jobs.size(); i++) {
-            if (jobs[i].titleId == focus) {
-                focusIndex = (int32_t) i;
-                break;
-            }
+        uint64_t focus = getFocusTitle();
+        auto order     = getDisplayOrder();
+        std::map<uint64_t, int32_t> slotOf;
+        for (size_t i = 0; i < order.size(); i++) {
+            slotOf[order[i]] = (int32_t) i;
         }
-        int32_t focusPage = focusIndex / ICONS_PER_PAGE;
+        //! titles missing in the order (not sorted yet) go behind everything, in list order
+        auto slotFor = [&](size_t jobIndex) {
+            auto it = slotOf.find(jobs[jobIndex].titleId);
+            return it != slotOf.end() ? it->second : (int32_t) (order.size() + jobIndex);
+        };
+        auto focusIt      = slotOf.find(focus);
+        int32_t focusPage = focusIt != slotOf.end() ? focusIt->second / ICONS_PER_PAGE : 0;
         int32_t best      = -1;
         int32_t bestScore = 0;
         for (size_t i = 0; i < jobs.size(); i++) {
             if (doneJob[i]) {
                 continue;
             }
-            int32_t page = (int32_t) i / ICONS_PER_PAGE;
+            int32_t slot = slotFor(i);
+            int32_t page = slot / ICONS_PER_PAGE;
             int32_t diff = page - focusPage;
             //! same page first, then +1, -1, +2, -2, ... and within a page left to right
             int32_t rank  = diff == 0 ? 0 : (diff > 0 ? diff * 2 - 1 : -diff * 2);
-            int32_t score = rank * ICONS_PER_PAGE + (int32_t) (i % ICONS_PER_PAGE);
+            int32_t score = rank * ICONS_PER_PAGE + (slot % ICONS_PER_PAGE);
             if (best < 0 || score < bestScore) {
                 best      = (int32_t) i;
                 bestScore = score;

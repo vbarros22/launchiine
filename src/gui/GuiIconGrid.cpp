@@ -294,6 +294,7 @@ void GuiIconGrid::resortPositions() {
     positionMutex.unlock();
 
     if (changed) {
+        displayOrderVersion++;
         bUpdatePositions = true;
         //! keep the selection on screen when it moved to another page
         setSelectedGame(selectedGame);
@@ -356,6 +357,7 @@ void GuiIconGrid::setFilter(const std::string &filter) {
     }
     filterText  = newFilter;
     filterWords = splitWords(newFilter);
+    displayOrderVersion++;
     DEBUG_FUNCTION_LINE("Filter words: %d", (int) filterWords.size());
 
     curPage          = 0;

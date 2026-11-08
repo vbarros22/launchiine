@@ -119,6 +119,17 @@ public:
         return focusTitle;
     }
 
+    //! Order of the icons on screen, so the loader can work page by page
+    void setDisplayOrder(const std::vector<uint64_t> &order) {
+        std::lock_guard<std::mutex> guard(focusLock);
+        displayOrder = order;
+    }
+
+    std::vector<uint64_t> getDisplayOrder() {
+        std::lock_guard<std::mutex> guard(focusLock);
+        return displayOrder;
+    }
+
     sigslot::signal1<GameList *> titleListChanged;
     sigslot::signal1<gameInfo *> titleUpdated;
     sigslot::signal1<gameInfo *> titleAdded;
@@ -168,6 +179,7 @@ protected:
     //! no std::atomic<uint64_t>: 64 bit atomics need libatomic on the 32 bit PowerPC
     std::mutex focusLock;
     uint64_t focusTitle = 0;
+    std::vector<uint64_t> displayOrder;
 };
 
 #endif

@@ -199,6 +199,7 @@ bool Application::procUI() {
 
 void Application::executeThread() {
     DEBUG_FUNCTION_LINE("Entering main loop");
+    uint32_t renderedFrames = 0;
 
     //! main GX2 loop (60 Hz cycle with max priority on core 1)
     while (!exitApplication) {
@@ -249,6 +250,11 @@ void Application::executeThread() {
         mainWindow->unlockGUI();
 
         video->waitForVSync();
+
+        //! heartbeat: tells a frozen render thread apart from a stuck loader in the logs
+        if (++renderedFrames % 120 == 0) {
+            DEBUG_FUNCTION_LINE("render thread alive, frame %u", renderedFrames);
+        }
     }
 
     if (bgMusic) {

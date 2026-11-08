@@ -139,6 +139,11 @@ void MainWindow::process() {
     //! apply results of the background title loader on this (the render) thread
     gameList.pollEvents();
 
+    if (currentDrcFrame && currentDrcFrame->getDisplayOrderVersion() != displayOrderVersionSent) {
+        displayOrderVersionSent = currentDrcFrame->getDisplayOrderVersion();
+        gameList.setDisplayOrder(currentDrcFrame->getDisplayOrder());
+    }
+
     if (inputCooldown > 0) {
         inputCooldown--;
     }

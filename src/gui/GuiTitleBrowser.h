@@ -24,6 +24,15 @@ public:
     //! show only titles whose name contains the filter (case insensitive), empty shows all
     virtual void setFilter(const std::string &filter) {}
 
+    //! order of the titles on screen; the version changes whenever the order does
+    virtual std::vector<uint64_t> getDisplayOrder() {
+        return {};
+    }
+
+    virtual uint32_t getDisplayOrderVersion() {
+        return 0;
+    }
+
     sigslot::signal2<GuiTitleBrowser *, uint64_t> gameLaunchClicked;
     sigslot::signal2<GuiTitleBrowser *, uint64_t> gameSelectionChanged;
 };
