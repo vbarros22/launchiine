@@ -223,6 +223,25 @@ static std::vector<std::string> splitWords(const std::string &normalized) {
     return words;
 }
 
+//! full name for the title bar, line breaks of the two line long name become spaces.
+//! Falls back to the short name.
+static std::string displayName(const gameInfo *info) {
+    std::string result;
+    for (char c : info->longName) {
+        if (c == '\n' || c == '\r' || c == '\t') {
+            c = ' ';
+        }
+        if (c == ' ' && (result.empty() || result.back() == ' ')) {
+            continue;
+        }
+        result += c;
+    }
+    while (!result.empty() && result.back() == ' ') {
+        result.pop_back();
+    }
+    return result.empty() ? info->name : result;
+}
+
 bool GuiIconGrid::matchesFilter(const gameInfo *info) const {
     if (filterWords.empty()) {
         return true;
@@ -304,7 +323,7 @@ void GuiIconGrid::setSelectedGame(uint64_t idx) {
         container = x.second;
         if (x.first == idx) {
             container->image->setSelected(true);
-            gameTitle.setText(container->info->name.c_str());
+            gameTitle.setText(displayName(container->info).c_str());
         } else {
             container->image->setSelected(false);
         }
@@ -690,7 +709,7 @@ void GuiIconGrid::OnGameTitleUpdated(gameInfo *info) {
     if (container != nullptr) {
         container->updateImageData();
         if (info->titleId == selectedGame) {
-            gameTitle.setText(info->name.c_str());
+            gameTitle.setText(displayName(info).c_str());
         }
     }
 

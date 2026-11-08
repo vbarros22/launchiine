@@ -448,6 +448,9 @@ void MainWindow::OnGameSelectionChange(GuiTitleBrowser *element, uint64_t select
     if (!currentDrcFrame || !currentTvFrame)
         return;
 
+    //! load icons around what the user is looking at first
+    gameList.setFocusTitle(selectedIdx);
+
     if (element == currentDrcFrame && currentDrcFrame != currentTvFrame) {
         currentTvFrame->setSelectedGame(selectedIdx);
     } else if (element == currentTvFrame && currentDrcFrame != currentTvFrame) {

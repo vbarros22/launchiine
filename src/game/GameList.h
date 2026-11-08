@@ -69,7 +69,8 @@ public:
     }
 
     //! Worker thread only. Returns early once stopLoading() was called.
-    //! Details are loaded starting at the page that holds priorityTitleId.
+    //! Details are loaded starting at the page that holds priorityTitleId, then outwards
+    //! from whatever page the focus title (see setFocusTitle) is on.
     int32_t load(uint64_t priorityTitleId = 0);
 
     //! Ask a running load() to stop after the current title. The caller has to wait for
@@ -80,6 +81,11 @@ public:
 
     //! Render thread only.
     void pollEvents();
+
+    //! The loader prefers titles close to this one (the selection), any thread.
+    void setFocusTitle(uint64_t titleId) {
+        focusTitle = titleId;
+    }
 
     sigslot::signal1<GameList *> titleListChanged;
     sigslot::signal1<gameInfo *> titleUpdated;
@@ -120,6 +126,7 @@ protected:
     std::vector<PendingEvent> pendingEvents;
 
     std::atomic<bool> stopAsyncLoading{false};
+    std::atomic<uint64_t> focusTitle{0};
 };
 
 #endif

@@ -501,15 +501,42 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     }
     unlock();
 
-    //! start with the page the menu opens on (15 icons per page), then the rest in order
-    constexpr size_t ICONS_PER_PAGE = 15;
-    for (size_t i = 0; i < jobs.size(); i++) {
-        if (jobs[i].titleId == priorityTitleId) {
-            size_t pageStart = (i / ICONS_PER_PAGE) * ICONS_PER_PAGE;
-            std::rotate(jobs.begin(), jobs.begin() + pageStart, jobs.end());
-            break;
-        }
+    //! Load the page that is on screen first, then spread outwards (next page, previous
+    //! page, ...). The focus follows the selection, so flipping pages while loading moves
+    //! the loader along. Jobs are in list order, which is the order of the icons.
+    constexpr int32_t ICONS_PER_PAGE = 15;
+    if (focusTitle == 0) {
+        focusTitle = priorityTitleId;
     }
+    std::vector<bool> doneJob(jobs.size(), false);
+    auto pickNextJob = [&]() -> int32_t {
+        uint64_t focus     = focusTitle;
+        int32_t focusIndex = 0;
+        for (size_t i = 0; i < jobs.size(); i++) {
+            if (jobs[i].titleId == focus) {
+                focusIndex = (int32_t) i;
+                break;
+            }
+        }
+        int32_t focusPage = focusIndex / ICONS_PER_PAGE;
+        int32_t best      = -1;
+        int32_t bestScore = 0;
+        for (size_t i = 0; i < jobs.size(); i++) {
+            if (doneJob[i]) {
+                continue;
+            }
+            int32_t page = (int32_t) i / ICONS_PER_PAGE;
+            int32_t diff = page - focusPage;
+            //! same page first, then +1, -1, +2, -2, ... and within a page left to right
+            int32_t rank  = diff == 0 ? 0 : (diff > 0 ? diff * 2 - 1 : -diff * 2);
+            int32_t score = rank * ICONS_PER_PAGE + (int32_t) (i % ICONS_PER_PAGE);
+            if (best < 0 || score < bestScore) {
+                best      = (int32_t) i;
+                bestScore = score;
+            }
+        }
+        return best;
+    };
 
     std::map<uint64_t, CachedName> freshNames;
     bool cacheChanged = false;
@@ -519,11 +546,13 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     OSTime iconTicks  = 0;
     uint32_t iconsOk  = 0;
 
-    for (auto &job : jobs) {
+    for (int32_t next = pickNextJob(); next >= 0; next = pickNextJob()) {
         if (stopAsyncLoading) {
             DEBUG_FUNCTION_LINE("Stop async title loading");
             return;
         }
+        doneJob[next] = true;
+        Job &job      = jobs[next];
         PendingEvent event{PendingEvent::TITLE_UPDATED};
         event.info = job.info;
 
