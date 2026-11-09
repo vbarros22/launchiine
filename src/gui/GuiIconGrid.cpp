@@ -1018,6 +1018,16 @@ void GuiIconGrid::updateButtonPositions() {
             row = 0;
         }
     }
+
+    //! The arrows have to be drawn after the icons: they write depth for their whole
+    //! (partly transparent) rectangle, so icons drawn later and scrolling under them were
+    //! cut out, which showed up as a dark band behind the arrows while changing pages.
+    if (arrowRightButton.isVisible()) {
+        bringToFront(&arrowRightButton);
+    }
+    if (arrowLeftButton.isVisible()) {
+        bringToFront(&arrowLeftButton);
+    }
     positionMutex.unlock();
 }
 

@@ -36,7 +36,7 @@ public:
         settingsButton.setTrigger(&touchTrigger);
         settingsButton.setTrigger(&wpadTouchTrigger);
         settingsButton.setTrigger(&settingsTrigger);
-        settingsButton.setAlignment(ALIGN_LEFT | ALIGN_BOTTOM);
+        settingsButton.setAlignment(ALIGN_LEFT | ALIGN_TOP);
         settingsButton.setSoundClick(buttonClickSound);
         settingsButton.setEffectGrow();
         settingsButton.clicked.connect(this, &MainDrcButtonsFrame::OnSettingsButtonClick);
@@ -46,9 +46,10 @@ public:
         //! between TV and GamePad, which looked like a flicker. It stays off until the TV
         //! gets a view of its own.
 
-        //! controls, the A/B/Y/+ actions are not discoverable otherwise
-        hintText.setAlignment(ALIGN_CENTER | ALIGN_BOTTOM);
-        hintText.setPosition(0, 18);
+        //! controls, the A/B/Y/+ actions are not discoverable otherwise. At the top: the
+        //! name of the selected title is shown at the bottom.
+        hintText.setAlignment(ALIGN_CENTER | ALIGN_TOP);
+        hintText.setPosition(0, -18);
         hintText.setMaxWidth(w - 260, GuiText::DOTTED);
         append(&hintText);
 
