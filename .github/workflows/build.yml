@@ -1,9 +1,13 @@
 name: Build
 
-# Builds men.rpx on every push to any branch and on demand (Actions tab -> Build -> Run workflow).
+# Builds men.rpx on every push to a branch, for pull requests and on demand (Actions tab -> Build -> Run workflow).
+# Tags are handled by release.yml.
 # The file is attached to the run as the "men-rpx" artifact.
 on:
   push:
+    branches:
+      - "**"
+  pull_request:
   workflow_dispatch:
 
 jobs:

@@ -1,0 +1,36 @@
+name: Release
+
+# Pushing a tag like v0.2 builds men.rpx and publishes a GitHub release with
+# - men.rpx
+# - launchiine-<tag>.zip, laid out like the SD card (wiiu/environments/aroma/men.rpx)
+# The release text is taken from release-notes.md.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build men.rpx
+        run: |
+          docker build . -t builder
+          docker run --rm -v ${PWD}:/project builder make
+      - name: Package
+        run: |
+          mkdir -p sd/wiiu/environments/aroma
+          cp men.rpx sd/wiiu/environments/aroma/men.rpx
+          (cd sd && zip -r ../launchiine-${GITHUB_REF_NAME}.zip wiiu)
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: launchiine ${{ github.ref_name }}
+          body_path: release-notes.md
+          prerelease: true
+          files: |
+            men.rpx
+            launchiine-${{ github.ref_name }}.zip
