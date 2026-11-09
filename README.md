@@ -6,6 +6,13 @@ The original was published as an unfinished work in progress; this fork picks it
 > **Beta.** It has been tested on one console with ~190 titles (Wii U games, Virtual Console, Wii injects and 30+ homebrew apps).
 > Nothing is written to the NAND: deleting `men.rpx` from the SD card brings back the original Wii U Menu.
 
+### Screenshots
+| Main grid with the System and Homebrew folders | Homebrew folder |
+|---|---|
+| ![Main grid](docs/screenshots/main-grid.jpg) | ![Homebrew folder](docs/screenshots/homebrew-folder.jpg) |
+| **Search ("zelda")** | **Alphabetical order, page arrows** |
+| ![Search](docs/screenshots/search.jpg) | ![Games](docs/screenshots/games.jpg) |
+
 ### What changed compared to the original
 - **Stability:** fixed the random freezes and crashes (threading in the icon loader, GPU commands sent from a second thread,
   GUI objects deleted on another thread, file reads overwriting neighbouring memory, a hang on exit).
