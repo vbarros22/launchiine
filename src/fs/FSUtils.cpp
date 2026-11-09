@@ -18,10 +18,20 @@ int32_t FSUtils::LoadFileToMem(const char *filepath, uint8_t **inbuffer, uint32_
     if (iFd < 0)
         return -1;
 
-    uint32_t filesize = lseek(iFd, 0, SEEK_END);
+    off_t end = lseek(iFd, 0, SEEK_END);
     lseek(iFd, 0, SEEK_SET);
+    if (end <= 0 || end > 64 * 1024 * 1024) {
+        close(iFd);
+        return -2;
+    }
+    uint32_t filesize = (uint32_t) end;
 
-    uint8_t *buffer = (uint8_t *) malloc(filesize);
+    //! The FS reads straight into an aligned buffer by DMA in 0x40 byte units, so the last
+    //! read can write up to 63 bytes past the requested size. A buffer of the exact file
+    //! size let that overwrite the neighbouring allocation (seen as corrupted icon
+    //! textures). Align start and size to 0x40.
+    uint32_t allocSize = (filesize + 0x3F) & ~0x3F;
+    uint8_t *buffer    = (uint8_t *) memalign(0x40, allocSize > 0 ? allocSize : 0x40);
     if (buffer == nullptr) {
         close(iFd);
         return -2;
