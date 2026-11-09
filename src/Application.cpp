@@ -69,10 +69,9 @@ Application::~Application() {
     DEBUG_FUNCTION_LINE("Clear resources");
     Resources::Clear();
 
-    //! Resources::Clear queues its images and sounds; a GuiSound has to be deleted while
-    //! the SoundHandler still exists, otherwise its destructor starts a new one and hangs
-    DEBUG_FUNCTION_LINE("delete queued resources");
-    AsyncExecutor::flushDeletes();
+    //! Resources::Clear queues its images and sounds. Never delete them now: a GuiSound
+    //! destructor waits for the sound thread (or starts a new SoundHandler) and hangs.
+    AsyncExecutor::abandonDeletes();
 
     DEBUG_FUNCTION_LINE("Stop sound handler");
     SoundHandler::DestroyInstance();
@@ -273,9 +272,8 @@ void Application::executeThread() {
     delete mainWindow;
     mainWindow = nullptr;
 
-    //! icons, buttons and textures of the menu, while libgui memory still exists
-    DEBUG_FUNCTION_LINE("delete queued GUI objects");
-    AsyncExecutor::flushDeletes();
+    //! the queued icons, buttons, textures and sounds go away with the process
+    AsyncExecutor::abandonDeletes();
 
     DEBUG_FUNCTION_LINE("delete fontSystem");
     delete fontSystem;

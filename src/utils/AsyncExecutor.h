@@ -34,11 +34,13 @@ public:
         }
     }
 
-    //! Deletes everything that is queued right away. Only when nothing is rendered anymore,
-    //! and before the subsystems the objects need (sound, libgui memory) are shut down.
-    static void flushDeletes() {
+    //! On exit: forget what is queued without deleting it. The process ends right after
+    //! and the system frees its memory; deleting these objects then is only risky (a
+    //! GuiSound waits for the sound thread, which may never run again once the menu
+    //! left the foreground, textures live in heaps that are already released, ...).
+    static void abandonDeletes() {
         if (instance) {
-            instance->flushDeletesInternal();
+            instance->abandonDeletesInternal();
         }
     }
 
@@ -60,7 +62,7 @@ private:
 
     void processDeletesInternal();
 
-    void flushDeletesInternal();
+    void abandonDeletesInternal();
 
     void executeInternal(std::function<void()> func);
 
