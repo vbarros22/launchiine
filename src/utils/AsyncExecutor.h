@@ -34,6 +34,14 @@ public:
         }
     }
 
+    //! Deletes everything that is queued right away. Only when nothing is rendered anymore,
+    //! and before the subsystems the objects need (sound, libgui memory) are shut down.
+    static void flushDeletes() {
+        if (instance) {
+            instance->flushDeletesInternal();
+        }
+    }
+
     static void destroyInstance() {
         if (instance) {
             delete instance;
@@ -51,6 +59,8 @@ private:
     void pushForDeleteInternal(GuiElement *element);
 
     void processDeletesInternal();
+
+    void flushDeletesInternal();
 
     void executeInternal(std::function<void()> func);
 

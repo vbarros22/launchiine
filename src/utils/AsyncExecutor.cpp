@@ -21,6 +21,17 @@ void AsyncExecutor::processDeletesInternal() {
     deleteListMutex.unlock();
 }
 
+void AsyncExecutor::flushDeletesInternal() {
+    deleteListMutex.lock();
+    //! destructors may push more elements, the loop picks them up as well
+    while (!deleteList.empty()) {
+        GuiElement *ptr = deleteList.front().element;
+        deleteList.pop_front();
+        delete ptr;
+    }
+    deleteListMutex.unlock();
+}
+
 AsyncExecutor::AsyncExecutor() {
     thread = new std::thread([&]() {
         while (!exitThread) {
@@ -53,14 +64,8 @@ AsyncExecutor::~AsyncExecutor() {
     thread->join();
     delete thread;
 
-    //! rendering has stopped, delete what is left (destructors may push more)
-    deleteListMutex.lock();
-    while (!deleteList.empty()) {
-        GuiElement *ptr = deleteList.front().element;
-        deleteList.pop_front();
-        delete ptr;
-    }
-    deleteListMutex.unlock();
+    //! normally empty already, see Application
+    flushDeletesInternal();
 }
 
 void AsyncExecutor::executeInternal(std::function<void()> func) {
