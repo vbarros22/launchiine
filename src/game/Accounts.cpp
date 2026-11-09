@@ -2,6 +2,7 @@
 #include "fs/FSUtils.h"
 #include "utils/TgaUtils.h"
 #include "utils/logger.h"
+#include <coreinit/cache.h>
 #include <coreinit/time.h>
 #include <cstdio>
 #include <cstdlib>
@@ -86,9 +87,19 @@ std::vector<Accounts::Account> Accounts::list() {
         }
 
         if (imageBuffer) {
+            //! the image is written by IOS behind the CPU cache: no dirty lines may be written
+            //! back over it later and no stale lines may be read afterwards
+            memset(imageBuffer, 0, IMAGE_BUFFER_SIZE);
+            DCFlushRange(imageBuffer, IMAGE_BUFFER_SIZE);
             size_t imageSize = 0;
             auto res         = nn::act::GetMiiImageEx(&imageSize, imageBuffer, IMAGE_BUFFER_SIZE, 0, slot);
+            DCInvalidateRange(imageBuffer, IMAGE_BUFFER_SIZE);
             if (res.IsSuccess() && imageSize > 0 && imageSize <= IMAGE_BUFFER_SIZE) {
+                DEBUG_FUNCTION_LINE("Slot %u: Mii TGA header %02X %02X %02X | %ux%u %u bpp, descriptor %02X", slot, imageBuffer[0], imageBuffer[1], imageBuffer[2],
+                                    imageBuffer[12] | (imageBuffer[13] << 8), imageBuffer[14] | (imageBuffer[15] << 8), imageBuffer[16], imageBuffer[17]);
+                //! raw copy for debugging
+                FSUtils::CreateSubfolder(SETTINGS_DIR);
+                FSUtils::saveBufferToFile("fs:/vol/external01/wiiu/launchiine/mii-debug.tga", imageBuffer, imageSize);
                 if (!sanitizeTga(imageBuffer, imageSize, account.miiTga)) {
                     DEBUG_FUNCTION_LINE("Slot %u: Mii image is not a supported TGA (%u bytes)", slot, (uint32_t) imageSize);
                     account.miiTga.clear();
