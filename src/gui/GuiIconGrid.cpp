@@ -929,8 +929,9 @@ void GuiIconGrid::updateButtonPositions() {
         remove(x);
     }
 
-    const bool filtering                 = !filterText.empty();
-    const std::vector<uint64_t> &layout = filtering ? currentLayout() : position;
+    //! always the same list the navigation uses: search results, folder content or the
+    //! main grid (which hides what is inside folders)
+    const std::vector<uint64_t> layout = currentLayout();
 
     uint32_t elementSize = layout.size();
     uint32_t pages       = (elementSize / (MAX_COLS * MAX_ROWS)) + 1;
