@@ -41,6 +41,11 @@ CFLAGS	:=	-g -Wall -O2 -ffunction-sections \
 
 CFLAGS	+=	$(INCLUDE) -D__WIIU__ -D__WUT__
 
+# make VERBOSE=1: log every title, texture and a render heartbeat (for hunting freezes)
+ifeq ($(VERBOSE),1)
+CFLAGS	+=	-DVERBOSE_LOG
+endif
+
 CXXFLAGS	:= $(CFLAGS)
 
 ASFLAGS	:=	-g $(ARCH)

@@ -29,7 +29,8 @@ public:
           gameListFilterButton(w, h), touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
           wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
           settingsTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZL, true), switchLayoutTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZR, true),
-          plusTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_PLUS, true) {
+          plusTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_PLUS, true),
+          hintText("A Open   B Back   Y Move in/out of folder   + Search   L/R Pages   ZL Settings", 22, glm::vec4(1.0f, 1.0f, 1.0f, 0.7f)) {
         settingsButton.setClickable(true);
         settingsButton.setImage(&settingsIcon);
         settingsButton.setTrigger(&touchTrigger);
@@ -41,16 +42,15 @@ public:
         settingsButton.clicked.connect(this, &MainDrcButtonsFrame::OnSettingsButtonClick);
         append(&settingsButton);
 
-        switchLayoutButton.setClickable(true);
-        switchLayoutButton.setImage(&switchIcon);
-        switchLayoutButton.setTrigger(&touchTrigger);
-        switchLayoutButton.setTrigger(&wpadTouchTrigger);
-        switchLayoutButton.setTrigger(&switchLayoutTrigger);
-        switchLayoutButton.setAlignment(ALIGN_RIGHT | ALIGN_BOTTOM);
-        switchLayoutButton.setSoundClick(screenSwitchSound);
-        switchLayoutButton.setEffectGrow();
-        switchLayoutButton.clicked.connect(this, &MainDrcButtonsFrame::OnLayoutSwithClick);
-        append(&switchLayoutButton);
+        //! The layout switch (ZR / bottom right icon) only swapped two identical grids
+        //! between TV and GamePad, which looked like a flicker. It stays off until the TV
+        //! gets a view of its own.
+
+        //! controls, the A/B/Y/+ actions are not discoverable otherwise
+        hintText.setAlignment(ALIGN_CENTER | ALIGN_BOTTOM);
+        hintText.setPosition(0, 18);
+        hintText.setMaxWidth(w - 260, GuiText::DOTTED);
+        append(&hintText);
 
         gameListFilterButton.setClickable(true);
         gameListFilterButton.setSoundClick(buttonClickSound);
@@ -99,6 +99,8 @@ private:
     GuiTrigger settingsTrigger;
     GuiTrigger switchLayoutTrigger;
     GuiTrigger plusTrigger;
+
+    GuiText hintText;
 };
 
 #endif //_SETTINGS_WINDOW_H_

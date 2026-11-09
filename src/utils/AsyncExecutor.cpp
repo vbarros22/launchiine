@@ -46,7 +46,7 @@ AsyncExecutor::AsyncExecutor() {
                 }
             }
             if (!emptyList && elements.empty()) {
-                DEBUG_FUNCTION_LINE("All tasks are done");
+                DEBUG_FUNCTION_LINE_VERBOSE("All tasks are done");
             }
             mutex.unlock();
 
@@ -71,7 +71,7 @@ void AsyncExecutor::executeInternal(std::function<void()> func) {
         DEBUG_FUNCTION_LINE("Warning, many tasks running currently");
         //std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
-    DEBUG_FUNCTION_LINE("Add new task");
+    DEBUG_FUNCTION_LINE_VERBOSE("Add new task");
     mutex.lock();
     elements.push_back(std::async(std::launch::async, func));
     mutex.unlock();

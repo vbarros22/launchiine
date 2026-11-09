@@ -15,6 +15,15 @@ extern "C" {
         WHBLogPrintf("[%23s]%30s@L%04d: " FMT "", __FILENAME__, __FUNCTION__, __LINE__, ##ARGS); \
     } while (0)
 
+//! per title / per frame details, only in builds made with `make VERBOSE=1`
+#ifdef VERBOSE_LOG
+#define DEBUG_FUNCTION_LINE_VERBOSE(FMT, ARGS...) DEBUG_FUNCTION_LINE(FMT, ##ARGS)
+#else
+#define DEBUG_FUNCTION_LINE_VERBOSE(FMT, ARGS...) \
+    do {                                          \
+    } while (0)
+#endif
+
 #define DEBUG_FUNCTION_LINE_WRITE(FMT, ARGS...)                                                  \
     do {                                                                                         \
         WHBLogWritef("[%23s]%30s@L%04d: " FMT "", __FILENAME__, __FUNCTION__, __LINE__, ##ARGS); \

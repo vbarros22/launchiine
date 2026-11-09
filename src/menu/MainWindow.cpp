@@ -546,7 +546,6 @@ extern "C" int32_t SYSSwitchToEShop(void *);
 extern "C" int32_t _SYSSwitchTo(uint32_t pfid);
 
 bool MainWindow::OnGameLaunch(uint64_t titleId) {
-    DEBUG_FUNCTION_LINE("Launch GAME!!");
 
     if (titleId == 0x0005001010040000L ||
         titleId == 0x0005001010040100L ||

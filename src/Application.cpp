@@ -49,7 +49,6 @@ Application::Application()
     bgMusic->Play();
     bgMusic->SetVolume(50);
 
-    AsyncExecutor::execute([] { DEBUG_FUNCTION_LINE("Hello"); });
 
     exitApplication = false;
 
@@ -260,7 +259,7 @@ void Application::executeThread() {
 
         //! heartbeat: tells a frozen render thread apart from a stuck loader in the logs
         if (++renderedFrames % 30 == 0) {
-            DEBUG_FUNCTION_LINE("render thread alive, frame %u", renderedFrames);
+            DEBUG_FUNCTION_LINE_VERBOSE("render thread alive, frame %u", renderedFrames);
         }
     }
 

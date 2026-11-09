@@ -503,7 +503,7 @@ void GuiIconGrid::setFilter(const std::string &filter) {
     filterText  = newFilter;
     filterWords = splitWords(newFilter);
     displayOrderVersion++;
-    DEBUG_FUNCTION_LINE("Filter words: %d", (int) filterWords.size());
+    DEBUG_FUNCTION_LINE_VERBOSE("Filter words: %d", (int) filterWords.size());
 
     curPage          = 0;
     bUpdatePositions = true;
@@ -804,7 +804,7 @@ void GuiIconGrid::OnGameButtonClick(GuiButton *button, const GuiController *cont
 }
 
 void GuiIconGrid::OnGameTitleAdded(gameInfo *info) {
-    DEBUG_FUNCTION_LINE("Adding %016llX", info->titleId);
+    DEBUG_FUNCTION_LINE_VERBOSE("Adding %016llX", info->titleId);
     GuiImageData *imageData = &noIcon;
     if (info->imageData != nullptr) {
         imageData = info->imageData;
@@ -843,7 +843,7 @@ void GuiIconGrid::OnGameTitleAdded(gameInfo *info) {
 }
 
 void GuiIconGrid::OnGameTitleUpdated(gameInfo *info) {
-    DEBUG_FUNCTION_LINE("Updating infos of %016llX", info->titleId);
+    DEBUG_FUNCTION_LINE_VERBOSE("Updating infos of %016llX", info->titleId);
     GameInfoContainer *container = nullptr;
     containerMutex.lock();
     for (auto const &x : gameInfoContainers) {

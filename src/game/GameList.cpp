@@ -305,7 +305,7 @@ namespace {
 
         //! (no MEMGetTotalFreeSizeForExpHeap here: walking the heap from this thread while
         //! others allocate is not safe)
-        DEBUG_FUNCTION_LINE("%016llX: icon %u bytes, type %u, %ux%u, %u bpp", titleId, bufferSize,
+        DEBUG_FUNCTION_LINE_VERBOSE("%016llX: icon %u bytes, type %u, %ux%u, %u bpp", titleId, bufferSize,
                             bufferSize >= 18 ? buffer[2] : 0,
                             bufferSize >= 18 ? (buffer[12] | (buffer[13] << 8)) : 0,
                             bufferSize >= 18 ? (buffer[14] | (buffer[15] << 8)) : 0,
@@ -412,10 +412,10 @@ void GameList::pollEvents() {
                 if (!event.iconTga.empty()) {
                     texturesCreated++;
                     if (info->imageData == nullptr) {
-                        DEBUG_FUNCTION_LINE("%016llX: creating texture", info->titleId);
+                        DEBUG_FUNCTION_LINE_VERBOSE("%016llX: creating texture", info->titleId);
                         auto *imageData = new GuiImageData(event.iconTga.data(), event.iconTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
                         if (imageData->getTexture() != nullptr) {
-                            DEBUG_FUNCTION_LINE("%016llX: texture ok", info->titleId);
+                            DEBUG_FUNCTION_LINE_VERBOSE("%016llX: texture ok", info->titleId);
                             info->imageData = imageData;
                         } else {
                             DEBUG_FUNCTION_LINE("%016llX: creating the texture failed", info->titleId);
@@ -665,7 +665,7 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
             continue;
         }
         freshNames[job.titleId] = {event.name, event.longName, event.productCode};
-        DEBUG_FUNCTION_LINE("%016llX %-12s appType %08X \"%s\"", job.titleId, event.productCode.c_str(), job.info->mcpInfo.appType, event.name.c_str());
+        DEBUG_FUNCTION_LINE_VERBOSE("%016llX %-12s appType %08X \"%s\"", job.titleId, event.productCode.c_str(), job.info->mcpInfo.appType, event.name.c_str());
         if (event.name != job.cachedName || event.longName != job.cachedLongName || event.productCode != job.cachedProductCode) {
             DEBUG_FUNCTION_LINE("%016llX renamed to \"%s\"", job.titleId, event.name.c_str());
             cacheChanged  = true;
