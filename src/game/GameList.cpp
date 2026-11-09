@@ -288,24 +288,20 @@ namespace {
     //! Loader thread: reads and sanitizes the icon. No GX2 calls here.
     bool readTitleIcon(uint64_t titleId, const std::string &metaDir, std::vector<uint8_t> &outTga) {
         std::string iconPath = metaDir + "/iconTex.tga";
-        uint8_t *buffer      = nullptr;
-        uint32_t bufferSize  = 0;
-        if (isHomebrewTitle(titleId)) {
-            std::vector<uint8_t> raw;
-            if (!FSUtils::LoadFileRawFS(iconPath.c_str(), raw) || raw.empty()) {
-                DEBUG_FUNCTION_LINE("%016llX: no homebrew icon", titleId);
-                return false;
-            }
-            bufferSize = raw.size();
-            buffer     = (uint8_t *) malloc(bufferSize);
-            if (!buffer) {
-                return false;
-            }
-            memcpy(buffer, raw.data(), bufferSize);
-        } else if (FSUtils::LoadFileToMem(("fs:" + iconPath).c_str(), &buffer, &bufferSize) <= 0 || buffer == nullptr) {
+        //! Own FSClient, never the shared devoptab one: the render thread reads splash
+        //! screens through devoptab at the same time. Also the only way that works for the
+        //! virtual homebrew files.
+        std::vector<uint8_t> raw;
+        if (!FSUtils::LoadFileRawFS(iconPath.c_str(), raw) || raw.empty()) {
             DEBUG_FUNCTION_LINE("%016llX: no icon file", titleId);
             return false;
         }
+        uint32_t bufferSize = raw.size();
+        uint8_t *buffer     = (uint8_t *) malloc(bufferSize);
+        if (!buffer) {
+            return false;
+        }
+        memcpy(buffer, raw.data(), bufferSize);
 
         //! (no MEMGetTotalFreeSizeForExpHeap here: walking the heap from this thread while
         //! others allocate is not safe)
