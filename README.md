@@ -22,9 +22,11 @@ The original was published as an unfinished work in progress; this fork picks it
 - ZL opens System Settings.
 
 ### Installation
-1. Download `men.rpx` from the latest build (Actions tab of this repository, artifact `men-rpx`).
-2. Copy it to `sd:/wiiu/environments/aroma/men.rpx`.
+1. Download the latest release from the [Releases page](https://github.com/vbarros22/launchiine/releases).
+2. Extract `launchiine-<version>.zip` to the root of the SD card, or copy `men.rpx` to `sd:/wiiu/environments/aroma/men.rpx`.
 3. Start the console as usual; launchiine shows up instead of the Wii U Menu.
+
+Development builds of every commit are available as the `men-rpx` artifact in the Actions tab.
 
 To go back to the original menu, delete (or rename) `men.rpx`.
 
