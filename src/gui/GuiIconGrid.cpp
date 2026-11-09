@@ -998,7 +998,10 @@ void GuiIconGrid::updateButtonPositions() {
             }
         }
 
-        if (element == nullptr) {
+        //! Empty slots mark free space on the main grid like in the Wii U Menu; in search
+        //! results and folders they only bury the few real entries, leave the slot blank.
+        bool showEmptySlot = filterText.empty() && currentFolder == 0;
+        if (element == nullptr && showEmptySlot) {
             if (emptyButtons.size() <= emptyIconUse) {
                 break;
             }
@@ -1006,6 +1009,17 @@ void GuiIconGrid::updateButtonPositions() {
             emptyIconUse++;
         }
         positionButtons.push_back(element);
+        if (element == nullptr) {
+            col++;
+            if (col >= MAX_COLS) {
+                col = 0;
+                row++;
+            }
+            if (row >= MAX_ROWS) {
+                row = 0;
+            }
+            continue;
+        }
         element->setPosition(posX, posY);
         append(element);
 
