@@ -259,7 +259,7 @@ void Application::executeThread() {
         AsyncExecutor::processDeletes();
 
         //! heartbeat: tells a frozen render thread apart from a stuck loader in the logs
-        if (++renderedFrames % 120 == 0) {
+        if (++renderedFrames % 30 == 0) {
             DEBUG_FUNCTION_LINE("render thread alive, frame %u", renderedFrames);
         }
     }

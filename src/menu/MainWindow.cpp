@@ -497,6 +497,10 @@ void MainWindow::OnGameLaunchSplashScreen(GuiTitleBrowser *element, uint64_t tit
     gameInfo *info = gameList.getGameInfo(titleID);
     if (info != nullptr) {
         launchInProgress = true;
+        //! nothing else heavy while launching: the splash screen and the launch get the
+        //! render thread and the file system for themselves
+        gameList.setPaused(true);
+        DEBUG_FUNCTION_LINE("Launch requested for %016llX, loader paused", titleID);
         auto *splashScreenDRC = new GameSplashScreen(width, height, info, false);
         splashScreenDRC->setEffect(EFFECT_FADE, 15, 255);
         splashScreenDRC->setState(GuiElement::STATE_DISABLED);
@@ -523,7 +527,10 @@ void MainWindow::OnGameLaunchSplashScreenFinished(GuiElement *element, gameInfo 
         //! when a full title launch was started this process is about to exit.
         //! For everything else (failure, applets that put us into background) allow launching again.
         if (!OnGameLaunch(info->titleId)) {
+            //! applets (eShop, browser, ...) come back to us, a failed launch too
             launchInProgress = false;
+            gameList.setPaused(false);
+            DEBUG_FUNCTION_LINE("No full launch, loader resumed");
         }
     }
     if (element) {

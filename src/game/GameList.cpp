@@ -370,6 +370,13 @@ gameInfo *GameList::getGameInfo(uint64_t titleId) {
     return result;
 }
 
+bool GameList::waitWhilePaused() {
+    while (pausedLoading && !stopAsyncLoading) {
+        OSSleepTicks(OSMillisecondsToTicks(20));
+    }
+    return !stopAsyncLoading;
+}
+
 void GameList::queueEvent(PendingEvent &&event) {
     pendingLock.lock();
     pendingEvents.push_back(std::move(event));
@@ -384,9 +391,10 @@ void GameList::pollEvents() {
     pendingEvents.clear();
     pendingLock.unlock();
 
-    //! Creating a texture costs a few ms (decode + convert), limit it per frame
+    //! Creating a texture costs a few ms (decode + convert), limit it per frame.
+    //! None while paused (a title is being launched).
     constexpr int MAX_TEXTURES_PER_FRAME = 3;
-    int texturesCreated                  = 0;
+    int texturesCreated                  = pausedLoading ? MAX_TEXTURES_PER_FRAME : 0;
 
     while (!renderQueue.empty()) {
         PendingEvent &event = renderQueue.front();
@@ -411,6 +419,7 @@ void GameList::pollEvents() {
                         DEBUG_FUNCTION_LINE("%016llX: creating texture", info->titleId);
                         auto *imageData = new GuiImageData(event.iconTga.data(), event.iconTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
                         if (imageData->getTexture() != nullptr) {
+                            DEBUG_FUNCTION_LINE("%016llX: texture ok", info->titleId);
                             info->imageData = imageData;
                         } else {
                             DEBUG_FUNCTION_LINE("%016llX: creating the texture failed", info->titleId);
@@ -605,7 +614,7 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     //! Pass 1: icons, around the visible page first. Reading a name through ACP costs
     //! ~130 ms (80% of the loading time), so titles with a cached name skip it here.
     for (int32_t next = pickNextJob(); next >= 0; next = pickNextJob()) {
-        if (stopAsyncLoading) {
+        if (!waitWhilePaused()) {
             DEBUG_FUNCTION_LINE("Stop async title loading");
             return;
         }
@@ -648,7 +657,7 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         if (job.cachedName == "<unknown>") {
             continue; // read in pass 1
         }
-        if (stopAsyncLoading) {
+        if (!waitWhilePaused()) {
             DEBUG_FUNCTION_LINE("Stop async name refresh");
             return;
         }

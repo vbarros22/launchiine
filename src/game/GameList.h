@@ -105,6 +105,12 @@ public:
         stopAsyncLoading = true;
     }
 
+    //! Pause the loader (after the current title) and the texture creation, e.g. while a
+    //! title is being launched. Any thread.
+    void setPaused(bool paused) {
+        pausedLoading = paused;
+    }
+
     //! Render thread only.
     void pollEvents();
 
@@ -176,6 +182,10 @@ protected:
     std::deque<PendingEvent> renderQueue;
 
     std::atomic<bool> stopAsyncLoading{false};
+    std::atomic<bool> pausedLoading{false};
+
+    //! loader thread: wait while paused, returns false when stopped
+    bool waitWhilePaused();
     //! no std::atomic<uint64_t>: 64 bit atomics need libatomic on the 32 bit PowerPC
     std::mutex focusLock;
     uint64_t focusTitle = 0;
