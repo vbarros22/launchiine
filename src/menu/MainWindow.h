@@ -17,7 +17,9 @@
 #ifndef _MAIN_WINDOW_H_
 #define _MAIN_WINDOW_H_
 
+#include "AccountSelectFrame.h"
 #include "KeyboardHelper.h"
+#include "game/Accounts.h"
 #include "MainDrcButtonsFrame.h"
 #include "game/GameList.h"
 #include "gui/GuiTitleBrowser.h"
@@ -152,6 +154,19 @@ private:
 
     void connectFolderSignals();
 
+    //! current user (top right) and the user picker
+    void setupUserButton();
+
+    void openAccountSelect(bool allowCancel);
+
+    void closeAccountSelect();
+
+    void OnUserButtonClicked(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
+
+    void OnAccountChosen(AccountSelectFrame *frame, uint8_t slot);
+
+    void OnAccountSelectCancelled(AccountSelectFrame *frame);
+
     void OnFolderOpened(GuiTitleBrowser *element, uint64_t folder);
 
     void OnFolderMembershipChanged(GuiTitleBrowser *element);
@@ -192,6 +207,15 @@ private:
 
     std::recursive_mutex guiMutex;
     KeyboardHelper *keyboardInstance = nullptr;
+
+    AccountSelectFrame *accountFrame = nullptr;
+    GuiButton *userButton            = nullptr;
+    GuiImageData *userMiiData        = nullptr;
+    GuiImage *userMiiImage           = nullptr;
+    GuiText *userNameText            = nullptr;
+    GuiTrigger userTouchTrigger{GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH};
+    GuiTrigger userWpadTrigger{GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A};
+    GuiTrigger userXTrigger{GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_X, true};
     bool launchInProgress            = false;
     uint32_t inputCooldown           = 0;
 };

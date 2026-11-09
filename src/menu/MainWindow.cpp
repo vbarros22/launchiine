@@ -48,6 +48,104 @@ MainWindow::MainWindow(int32_t w, int32_t h)
     gameList.titleAdded.connect(this, &MainWindow::OnGameTitleAdded);
     //! own thread (not the AsyncExecutor) so we can stop and join it before launching a title
     titleLoader = std::async(std::launch::async, [this] { gameList.load(startTitle); });
+
+    setupUserButton();
+    //! like the Wii U Menu: no default user, ask who is playing (once per boot)
+    if (Accounts::shouldAskAtStart()) {
+        openAccountSelect(false);
+    }
+}
+
+void MainWindow::setupUserButton() {
+    auto accounts   = Accounts::list();
+    uint8_t current = Accounts::currentSlot();
+    DEBUG_FUNCTION_LINE("%d accounts, current slot %u, default slot %u", (int) accounts.size(), current, Accounts::defaultSlot());
+    const Accounts::Account *account = nullptr;
+    for (auto &a : accounts) {
+        if (a.slot == current) {
+            account = &a;
+        }
+    }
+    if (account == nullptr) {
+        return;
+    }
+
+    userButton = new GuiButton(96, 96);
+    if (!account->miiTga.empty()) {
+        userMiiData = new GuiImageData(account->miiTga.data(), account->miiTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
+        if (userMiiData->getTexture()) {
+            userMiiImage = new GuiImage(userMiiData);
+            userMiiImage->setScale(0.75f);
+            userButton->setImage(userMiiImage);
+        }
+    }
+    userNameText = new GuiText(account->name.c_str(), 26, glm::vec4(1.0f));
+    userNameText->setAlignment(ALIGN_RIGHT | ALIGN_MIDDLE);
+    userNameText->setPosition(-100, 0);
+    userNameText->setMaxWidth(170, GuiText::DOTTED);
+    userButton->setLabel(userNameText);
+
+    userButton->setAlignment(ALIGN_RIGHT | ALIGN_TOP);
+    userButton->setPosition(-12, -6);
+    userButton->setTrigger(&userTouchTrigger);
+    userButton->setTrigger(&userWpadTrigger);
+    userButton->setTrigger(&userXTrigger);
+    userButton->setEffectGrow();
+    userButton->clicked.connect(this, &MainWindow::OnUserButtonClicked);
+    append(userButton);
+}
+
+void MainWindow::OnUserButtonClicked(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    openAccountSelect(true);
+}
+
+void MainWindow::openAccountSelect(bool allowCancel) {
+    if (accountFrame != nullptr || launchInProgress) {
+        return;
+    }
+    auto accounts = Accounts::list();
+    if (accounts.empty()) {
+        DEBUG_FUNCTION_LINE("No accounts found");
+        return;
+    }
+    accountFrame = new AccountSelectFrame(width, height, accounts, Accounts::currentSlot(), allowCancel);
+    accountFrame->accountChosen.connect(this, &MainWindow::OnAccountChosen);
+    accountFrame->cancelled.connect(this, &MainWindow::OnAccountSelectCancelled);
+    append(accountFrame);
+}
+
+void MainWindow::closeAccountSelect() {
+    if (accountFrame == nullptr) {
+        return;
+    }
+    accountFrame->accountChosen.disconnect(this);
+    accountFrame->cancelled.disconnect(this);
+    remove(accountFrame);
+    AsyncExecutor::pushForDelete(accountFrame);
+    accountFrame = nullptr;
+    //! the A/B press that closed the picker must not reach the grid
+    inputCooldown = 15;
+}
+
+void MainWindow::OnAccountChosen(AccountSelectFrame *frame, uint8_t slot) {
+    Accounts::rememberChosenThisBoot();
+    if (slot == Accounts::currentSlot()) {
+        closeAccountSelect();
+        return;
+    }
+    DEBUG_FUNCTION_LINE("Switching to account slot %u", slot);
+    launchInProgress = true;
+    gameList.setPaused(true);
+    stopTitleLoader();
+    if (!Accounts::switchTo(slot)) {
+        DEBUG_FUNCTION_LINE("Switching account failed");
+        closeAccountSelect();
+        launchInProgress = false;
+    }
+}
+
+void MainWindow::OnAccountSelectCancelled(AccountSelectFrame *frame) {
+    closeAccountSelect();
 }
 
 namespace {
@@ -111,6 +209,15 @@ MainWindow::~MainWindow() {
 
     delete keyboardInstance;
     keyboardInstance = nullptr;
+
+    //! user button and picker; textures are freed with the process on exit anyway
+    if (accountFrame) {
+        remove(accountFrame);
+        accountFrame = nullptr;
+    }
+    if (userButton) {
+        remove(userButton);
+    }
 }
 
 void MainWindow::updateEffects() {
@@ -217,7 +324,10 @@ void MainWindow::update(GuiController *controller) {
     //! dont read behind the initial elements in case one was added
     //uint32_t tvSize = tvElements.size();
 
-    if (controller->chan & GuiTrigger::CHANNEL_1) {
+    if (accountFrame != nullptr) {
+        //! the user picker takes all input while it is open
+        accountFrame->update(controller);
+    } else if (controller->chan & GuiTrigger::CHANNEL_1) {
         uint32_t drcSize = drcElements.size();
 
         for (uint32_t i = 0; (i < drcSize) && (i < drcElements.size()); ++i) {
