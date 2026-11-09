@@ -30,7 +30,7 @@ public:
           wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
           settingsTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZL, true), switchLayoutTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZR, true),
           plusTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_PLUS, true),
-          hintText("A Open   B Back   Y Move in/out of folder   + Search   L/R Pages   ZL Settings", 22, glm::vec4(1.0f, 1.0f, 1.0f, 0.7f)) {
+          hintText("A Open   B Back   Y Folder in/out   + Search   L/R Pages   ZL Settings", 28, glm::vec4(1.0f)) {
         settingsButton.setClickable(true);
         settingsButton.setImage(&settingsIcon);
         settingsButton.setTrigger(&touchTrigger);
@@ -50,7 +50,8 @@ public:
         //! name of the selected title is shown at the bottom.
         hintText.setAlignment(ALIGN_CENTER | ALIGN_TOP);
         hintText.setPosition(0, -18);
-        hintText.setMaxWidth(w - 260, GuiText::DOTTED);
+        hintText.setMaxWidth(w - 420, GuiText::DOTTED); // keep clear of the settings tab
+        hintText.setBlurGlowColor(3.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
         append(&hintText);
 
         gameListFilterButton.setClickable(true);
