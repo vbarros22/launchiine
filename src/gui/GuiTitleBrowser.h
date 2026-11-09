@@ -4,6 +4,7 @@
 #include <gui/Gui.h>
 #include <gui/sigslot.h>
 #include <string>
+#include <vector>
 
 class GuiTitleBrowser : public GuiFrame {
 public:
@@ -36,8 +37,19 @@ public:
     //! show the content of a folder (0: main grid) without emitting folderOpened
     virtual void openFolder(uint64_t folder) {}
 
-    //! a title was moved in or out of a folder (by the other screen)
-    virtual void refreshFolders() {}
+    //! folders or their content changed; select the first of preferred that is visible
+    virtual void refreshFolders(const std::vector<uint64_t> &preferred = {}) {}
+
+    //! the title next to titleId in the current view (to select once it moved away), 0 if none
+    virtual uint64_t neighborOf(uint64_t titleId) {
+        return 0;
+    }
+
+    //! short message in the title bar, until the selection changes
+    virtual void showMessage(const std::string &message) {}
+
+    //! Y on a title or a user folder
+    sigslot::signal2<GuiTitleBrowser *, uint64_t> folderMenuRequested;
 
     sigslot::signal2<GuiTitleBrowser *, uint64_t> folderOpened;
     sigslot::signal1<GuiTitleBrowser *> folderMembershipChanged;

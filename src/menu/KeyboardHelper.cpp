@@ -89,12 +89,13 @@ KeyboardHelper::~KeyboardHelper() {
     }
 }
 
-bool KeyboardHelper::openKeyboard() {
+bool KeyboardHelper::openKeyboard(int32_t maxTextLength) {
     if (!keyboardCreated || keyboardOpen) {
         return false;
     }
     nn::swkbd::AppearArg appearArg;
     appearArg.keyboardArg.configArg.languageType = nn::swkbd::LanguageType::English;
+    appearArg.inputFormArg.maxTextLength         = maxTextLength;
     if (!nn::swkbd::AppearInputForm(appearArg)) {
         DEBUG_FUNCTION_LINE("nn::swkbd::AppearInputForm failed");
         return false;

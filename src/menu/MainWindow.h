@@ -19,6 +19,7 @@
 
 #include "AccountSelectFrame.h"
 #include "KeyboardHelper.h"
+#include "ListMenuFrame.h"
 #include "game/Accounts.h"
 #include "MainDrcButtonsFrame.h"
 #include "game/GameList.h"
@@ -171,6 +172,26 @@ private:
 
     void OnFolderMembershipChanged(GuiTitleBrowser *element);
 
+    //! Y: move a title / rename or delete a user folder
+    void OnFolderMenuRequested(GuiTitleBrowser *element, uint64_t titleId);
+
+    void openListMenu(const std::string &title, const std::vector<std::string> &options);
+
+    void closeListMenu();
+
+    void OnListMenuChosen(ListMenuFrame *menu, int32_t index);
+
+    void OnListMenuCancelled(ListMenuFrame *menu);
+
+    void moveTitle(uint64_t titleId, uint64_t folder);
+
+    //! refresh both screens and select the first visible of preferred
+    void refreshFolderViews(const std::vector<uint64_t> &preferred, const std::string &message);
+
+    std::string titleName(uint64_t titleId);
+
+    void openTextKeyboard(int32_t maxTextLength);
+
     void OnSettingsButtonClicked(GuiElement *element);
 
     void OnLayoutSwitchClicked(GuiElement *element);
@@ -209,6 +230,20 @@ private:
     KeyboardHelper *keyboardInstance = nullptr;
 
     AccountSelectFrame *accountFrame = nullptr;
+
+    enum class MenuKind { None, MoveTitle, FolderOptions, ConfirmDelete };
+    enum class KeyboardPurpose { Search, NewFolder, RenameFolder };
+    //! special destination in the "Move to" menu
+    static constexpr uint64_t NEW_FOLDER = 1;
+
+    ListMenuFrame *listMenu          = nullptr;
+    MenuKind menuKind                = MenuKind::None;
+    uint64_t menuTarget              = 0; // the title or folder the menu is about
+    uint64_t menuNeighbor            = 0; // selected after the title moved away
+    std::vector<uint64_t> menuDestinations;
+    KeyboardPurpose keyboardPurpose  = KeyboardPurpose::Search;
+    int32_t pendingKeyboardFrames    = 0; // open the keyboard after the A press is released
+    int32_t pendingKeyboardMaxLength = -1;
     GuiButton *userButton            = nullptr;
     GuiImageData *userMiiData        = nullptr;
     GuiImage *userMiiImage           = nullptr;

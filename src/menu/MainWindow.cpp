@@ -25,6 +25,7 @@
 #include "resources/Resources.h"
 #include "fs/FSUtils.h"
 #include "utils/AsyncExecutor.h"
+#include "game/Folders.h"
 #include <coreinit/title.h>
 #include <cinttypes>
 #include <cstdio>
@@ -275,22 +276,49 @@ void MainWindow::process() {
         }
     }
 
+    if (pendingKeyboardFrames > 0 && --pendingKeyboardFrames == 0) {
+        openTextKeyboard(pendingKeyboardMaxLength);
+    }
+
     if (keyboardInstance != nullptr && keyboardInstance->isReady()) {
         //! must run every frame, also while the keyboard is fading out
         if (keyboardInstance->checkResult()) {
-            if (keyboardInstance->wasConfirmed()) {
-                std::string result = keyboardInstance->getResult();
-                DEBUG_FUNCTION_LINE("Search filter: \"%s\"", result.c_str());
-                currentTvFrame->setFilter(result);
-                if (currentDrcFrame != currentTvFrame) {
-                    currentDrcFrame->setFilter(result);
-                }
-            }
+            std::string result = keyboardInstance->getResult();
+            bool confirmed     = keyboardInstance->wasConfirmed();
 
             currentTvFrame->clearState(GuiElement::STATE_DISABLED);
             currentDrcFrame->clearState(GuiElement::STATE_DISABLED);
             mainSwitchButtonFrame->clearState(GuiElement::STATE_DISABLED);
             inputCooldown = 15;
+
+            if (keyboardPurpose == KeyboardPurpose::Search) {
+                if (confirmed) {
+                    DEBUG_FUNCTION_LINE("Search filter: \"%s\"", result.c_str());
+                    currentTvFrame->setFilter(result);
+                    if (currentDrcFrame != currentTvFrame) {
+                        currentDrcFrame->setFilter(result);
+                    }
+                }
+            } else {
+                //! folder names: one line, no surrounding spaces
+                std::string name;
+                for (char c : result) {
+                    name += (c == '\t' || c == '\n' || c == '\r') ? ' ' : c;
+                }
+                name.erase(0, name.find_first_not_of(' '));
+                name.erase(name.find_last_not_of(' ') + 1);
+
+                if (!confirmed || name.empty()) {
+                    // nothing to do
+                } else if (keyboardPurpose == KeyboardPurpose::NewFolder) {
+                    uint64_t folder = Folders::createFolder(name);
+                    moveTitle(menuTarget, folder);
+                } else {
+                    Folders::renameFolder(menuTarget, name);
+                    refreshFolderViews({menuTarget}, "Renamed to \"" + name + "\"");
+                }
+            }
+            keyboardPurpose = KeyboardPurpose::Search;
         }
     }
 }
@@ -327,6 +355,8 @@ void MainWindow::update(GuiController *controller) {
     if (accountFrame != nullptr) {
         //! the user picker takes all input while it is open
         accountFrame->update(controller);
+    } else if (listMenu != nullptr) {
+        listMenu->update(controller);
     } else if (controller->chan & GuiTrigger::CHANNEL_1) {
         uint32_t drcSize = drcElements.size();
 
@@ -477,16 +507,26 @@ void MainWindow::OnGameListFilterButtonClicked(GuiElement *element) {
         return;
     }
 
+    if (listMenu != nullptr || pendingKeyboardFrames > 0) {
+        return;
+    }
+    keyboardPurpose = KeyboardPurpose::Search;
+    openTextKeyboard(-1);
+}
+
+void MainWindow::openTextKeyboard(int32_t maxTextLength) {
     if (keyboardInstance == nullptr) {
         keyboardInstance = new KeyboardHelper();
     }
     if (keyboardInstance->isReady() && !keyboardInstance->isOpen()) {
-        if (keyboardInstance->openKeyboard()) {
+        if (keyboardInstance->openKeyboard(maxTextLength)) {
             currentTvFrame->setState(GuiElement::STATE_DISABLED);
             currentDrcFrame->setState(GuiElement::STATE_DISABLED);
             mainSwitchButtonFrame->setState(GuiElement::STATE_DISABLED);
+            return;
         }
     }
+    keyboardPurpose = KeyboardPurpose::Search;
 }
 
 void MainWindow::OnLayoutSwitchEffectFinish(GuiElement *element) {
@@ -565,8 +605,175 @@ void MainWindow::connectFolderSignals() {
     for (auto *frame : {currentTvFrame, currentDrcFrame}) {
         frame->folderOpened.disconnect(this);
         frame->folderMembershipChanged.disconnect(this);
+        frame->folderMenuRequested.disconnect(this);
         frame->folderOpened.connect(this, &MainWindow::OnFolderOpened);
         frame->folderMembershipChanged.connect(this, &MainWindow::OnFolderMembershipChanged);
+        frame->folderMenuRequested.connect(this, &MainWindow::OnFolderMenuRequested);
+    }
+}
+
+std::string MainWindow::titleName(uint64_t titleId) {
+    if (Folders::isFolder(titleId)) {
+        return Folders::folderName(titleId);
+    }
+    std::string name;
+    gameList.lock();
+    for (int32_t i = 0; i < gameList.size(); i++) {
+        gameInfo *info = gameList.at(i);
+        if (info != nullptr && info->titleId == titleId) {
+            name = info->name;
+            break;
+        }
+    }
+    gameList.unlock();
+    return name;
+}
+
+void MainWindow::OnFolderMenuRequested(GuiTitleBrowser *element, uint64_t titleId) {
+    if (listMenu != nullptr || accountFrame != nullptr || launchInProgress || isKeyboardOpen() || pendingKeyboardFrames > 0) {
+        return;
+    }
+    menuTarget   = titleId;
+    menuNeighbor = element->neighborOf(titleId);
+    menuDestinations.clear();
+
+    if (Folders::isUserFolder(titleId)) {
+        menuKind = MenuKind::FolderOptions;
+        openListMenu("Folder \"" + Folders::folderName(titleId) + "\"", {"Rename", "Delete folder"});
+        return;
+    }
+    if (Folders::isFolder(titleId)) {
+        return;
+    }
+
+    menuKind         = MenuKind::MoveTitle;
+    uint64_t current = Folders::folderOf(titleId);
+    uint64_t natural = Folders::naturalFolder(titleId);
+    std::vector<std::string> labels;
+    if (current != 0) {
+        menuDestinations.push_back(0);
+        labels.emplace_back("Main grid");
+    }
+    if (natural != 0 && current != natural) {
+        menuDestinations.push_back(natural);
+        labels.push_back(Folders::folderName(natural) + " folder");
+    }
+    for (auto &folder : Folders::userFolders()) {
+        if (folder.id != current) {
+            menuDestinations.push_back(folder.id);
+            labels.push_back(folder.name);
+        }
+    }
+    menuDestinations.push_back(NEW_FOLDER);
+    labels.emplace_back("New folder...");
+
+    std::string name = titleName(titleId);
+    openListMenu(name.empty() ? "Move to" : "Move \"" + name + "\" to", labels);
+}
+
+void MainWindow::openListMenu(const std::string &title, const std::vector<std::string> &options) {
+    closeListMenu();
+    listMenu = new ListMenuFrame(width, height, title, options);
+    listMenu->optionChosen.connect(this, &MainWindow::OnListMenuChosen);
+    listMenu->cancelled.connect(this, &MainWindow::OnListMenuCancelled);
+    append(listMenu);
+}
+
+void MainWindow::closeListMenu() {
+    if (listMenu == nullptr) {
+        return;
+    }
+    listMenu->optionChosen.disconnect(this);
+    listMenu->cancelled.disconnect(this);
+    remove(listMenu);
+    AsyncExecutor::pushForDelete(listMenu);
+    listMenu = nullptr;
+    //! the A/B press that closed the menu must not reach the grid
+    inputCooldown = 15;
+}
+
+void MainWindow::OnListMenuCancelled(ListMenuFrame *menu) {
+    closeListMenu();
+    menuKind = MenuKind::None;
+}
+
+void MainWindow::OnListMenuChosen(ListMenuFrame *menu, int32_t index) {
+    MenuKind kind = menuKind;
+    closeListMenu();
+    menuKind = MenuKind::None;
+
+    switch (kind) {
+        case MenuKind::MoveTitle: {
+            if (index < 0 || index >= (int32_t) menuDestinations.size()) {
+                return;
+            }
+            uint64_t destination = menuDestinations[index];
+            if (destination == NEW_FOLDER) {
+                keyboardPurpose          = KeyboardPurpose::NewFolder;
+                pendingKeyboardMaxLength = 32;
+                pendingKeyboardFrames    = 10;
+            } else {
+                moveTitle(menuTarget, destination);
+            }
+            break;
+        }
+        case MenuKind::FolderOptions:
+            if (index == 0) {
+                keyboardPurpose          = KeyboardPurpose::RenameFolder;
+                pendingKeyboardMaxLength = 32;
+                pendingKeyboardFrames    = 10;
+            } else {
+                menuKind = MenuKind::ConfirmDelete;
+                openListMenu("Delete \"" + Folders::folderName(menuTarget) + "\"?", {"Delete (games go to the main grid)", "Cancel"});
+            }
+            break;
+        case MenuKind::ConfirmDelete:
+            if (index == 0) {
+                std::string name = Folders::folderName(menuTarget);
+                Folders::deleteFolder(menuTarget);
+                refreshFolderViews({menuNeighbor}, "Deleted the folder \"" + name + "\"");
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void MainWindow::moveTitle(uint64_t titleId, uint64_t folder) {
+    uint64_t source = Folders::folderOf(titleId);
+    Folders::moveTo(titleId, folder);
+    DEBUG_FUNCTION_LINE("Moved %016llX from %016llX to %016llX", titleId, source, folder);
+
+    //! a user folder that is now empty is removed
+    if (Folders::isUserFolder(source)) {
+        bool empty = true;
+        gameList.lock();
+        for (int32_t i = 0; i < gameList.size() && empty; i++) {
+            gameInfo *info = gameList.at(i);
+            if (info != nullptr && Folders::folderOf(info->titleId) == source) {
+                empty = false;
+            }
+        }
+        gameList.unlock();
+        if (empty) {
+            Folders::deleteFolder(source);
+        }
+    }
+
+    std::string message = folder == 0 ? "Moved to the main grid" : "Moved to \"" + Folders::folderName(folder) + "\"";
+    //! still visible (e.g. search results): keep it selected; otherwise the title next to it,
+    //! or the folder it went into
+    refreshFolderViews({titleId, menuNeighbor, folder}, message);
+}
+
+void MainWindow::refreshFolderViews(const std::vector<uint64_t> &preferred, const std::string &message) {
+    currentDrcFrame->refreshFolders(preferred);
+    if (currentTvFrame != currentDrcFrame) {
+        currentTvFrame->refreshFolders(preferred);
+    }
+    currentDrcFrame->showMessage(message);
+    if (currentTvFrame != currentDrcFrame) {
+        currentTvFrame->showMessage(message);
     }
 }
 

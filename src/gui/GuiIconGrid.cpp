@@ -38,7 +38,7 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
       buttonRTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_R, true),
       buttonBTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_B, true),
       buttonYTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_Y, true),
-      backButton(w, h), folderToggleButton(w, h), leftButton(w, h), rightButton(w, h), downButton(w, h), upButton(w, h), launchButton(w, h),
+      backButton(w, h), folderMenuButton(w, h), leftButton(w, h), rightButton(w, h), downButton(w, h), upButton(w, h), launchButton(w, h),
       arrowRightImageData(Resources::GetImageData("rightArrow.png")), arrowLeftImageData(Resources::GetImageData("leftArrow.png")), arrowRightImage(arrowRightImageData),
       arrowLeftImage(arrowLeftImageData), arrowRightButton(arrowRightImage.getWidth(), arrowRightImage.getHeight()), arrowLeftButton(arrowLeftImage.getWidth(), arrowLeftImage.getHeight()),
       noIcon(Resources::GetFile("noGameIcon.png"), Resources::GetFileSize("noGameIcon.png"), GX2_TEX_CLAMP_MODE_MIRROR),
@@ -76,9 +76,9 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     backButton.clicked.connect(this, &GuiIconGrid::OnBackClick);
     this->append(&backButton);
 
-    folderToggleButton.setTrigger(&buttonYTrigger);
-    folderToggleButton.clicked.connect(this, &GuiIconGrid::OnFolderToggleClick);
-    this->append(&folderToggleButton);
+    folderMenuButton.setTrigger(&buttonYTrigger);
+    folderMenuButton.clicked.connect(this, &GuiIconGrid::OnFolderMenuClick);
+    this->append(&folderMenuButton);
 
     arrowLeftButton.setImage(&arrowLeftImage);
     arrowLeftButton.setEffectGrow();
@@ -141,32 +141,78 @@ GuiIconGrid::~GuiIconGrid() {
     emptyButtons.clear();
     emptyIcons.clear();
 
-    for (auto &image : folderImages) {
-        delete image;
-        image = nullptr;
+    for (auto &x : folderInfos) {
+        delete x.second;
     }
+    folderInfos.clear();
+    for (auto &x : folderImages) {
+        delete x.second;
+    }
+    folderImages.clear();
 }
 
 void GuiIconGrid::setupFolders() {
-    const uint64_t ids[2]    = {Folders::FOLDER_SYSTEM, Folders::FOLDER_HOMEBREW};
-    const uint32_t colors[2] = {0x3A7BD5, 0xE8892B};
-    for (int i = 0; i < 2; i++) {
-        if (folderImages[i] == nullptr) {
-            auto tga        = Folders::makeFolderIconTga(colors[i]);
-            folderImages[i] = new GuiImageData(tga.data(), tga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
+    std::vector<Folders::UserFolder> wanted = {{Folders::FOLDER_SYSTEM, Folders::folderName(Folders::FOLDER_SYSTEM)},
+                                               {Folders::FOLDER_HOMEBREW, Folders::folderName(Folders::FOLDER_HOMEBREW)}};
+    for (auto &folder : Folders::userFolders()) {
+        wanted.push_back(folder);
+    }
+
+    //! folders that were deleted
+    for (auto it = folderInfos.begin(); it != folderInfos.end();) {
+        bool keep = false;
+        for (auto &folder : wanted) {
+            keep |= folder.id == it->first;
         }
-        gameInfo &info = folderInfos[i];
-        info.titleId   = ids[i];
-        info.appType   = (MCPAppType) 0;
-        info.name      = Folders::folderName(ids[i]);
-        info.longName  = "";
-        info.imageData = folderImages[i];
+        if (keep) {
+            ++it;
+            continue;
+        }
+        DEBUG_FUNCTION_LINE("Removing folder icon %016llX", it->first);
+        containerMutex.lock();
+        auto container = gameInfoContainers.find(it->first);
+        if (container != gameInfoContainers.end()) {
+            remove(container->second->button);
+            delete container->second;
+            gameInfoContainers.erase(container);
+        }
+        containerMutex.unlock();
+        positionMutex.lock();
+        position.erase(std::remove(position.begin(), position.end(), it->first), position.end());
+        positionMutex.unlock();
+        if (currentFolder == it->first) {
+            currentFolder = 0;
+        }
+        delete it->second;
+        it               = folderInfos.erase(it);
+        bResort          = true;
+        bUpdatePositions = true;
+    }
+
+    for (auto &folder : wanted) {
+        uint32_t color       = Folders::folderColor(folder.id);
+        GuiImageData *&image = folderImages[color];
+        if (image == nullptr) {
+            auto tga = Folders::makeFolderIconTga(color);
+            image    = new GuiImageData(tga.data(), tga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
+        }
+        gameInfo *&info = folderInfos[folder.id];
+        if (info == nullptr) {
+            info          = new gameInfo{};
+            info->titleId = folder.id;
+            info->appType = (MCPAppType) 0;
+        }
+        if (info->name != folder.name) {
+            info->name = folder.name;
+            bResort    = true;
+        }
+        info->imageData = image;
 
         containerMutex.lock();
-        bool exists = gameInfoContainers.find(ids[i]) != gameInfoContainers.end();
+        bool exists = gameInfoContainers.find(folder.id) != gameInfoContainers.end();
         containerMutex.unlock();
         if (!exists) {
-            OnGameTitleAdded(&info);
+            OnGameTitleAdded(info);
         }
     }
 }
@@ -211,8 +257,33 @@ void GuiIconGrid::openFolder(uint64_t folder) {
     afterFolderChange(folder != 0 ? 0 : previous);
 }
 
-void GuiIconGrid::refreshFolders() {
-    afterFolderChange(selectedGame);
+void GuiIconGrid::refreshFolders(const std::vector<uint64_t> &preferred) {
+    setupFolders();
+    resortPositions();
+    bResort = false;
+
+    //! a folder that became empty closes
+    if (currentFolder != 0 && !folderHasTitles(currentFolder)) {
+        currentFolder = 0;
+    }
+    uint64_t selection = selectedGame;
+    for (auto titleId : preferred) {
+        if (offsetForTitleId(titleId) >= 0) {
+            selection = titleId;
+            break;
+        }
+    }
+    afterFolderChange(selection);
+}
+
+uint64_t GuiIconGrid::neighborOf(uint64_t titleId) {
+    auto layout = currentLayout();
+    for (size_t i = 0; i < layout.size(); i++) {
+        if (layout[i] == titleId) {
+            return i + 1 < layout.size() ? layout[i + 1] : (i > 0 ? layout[i - 1] : 0);
+        }
+    }
+    return 0;
 }
 
 void GuiIconGrid::OnBackClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
@@ -223,35 +294,16 @@ void GuiIconGrid::OnBackClick(GuiButton *button, const GuiController *controller
     folderOpened(this, 0);
 }
 
-void GuiIconGrid::OnFolderToggleClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+void GuiIconGrid::OnFolderMenuClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
     uint64_t titleId = selectedGame;
-    uint64_t folder  = Folders::naturalFolder(titleId);
-    if (folder == 0 || !filterText.empty()) {
-        return; // not a folder title, or the search shows everything flat anyway
+    if (titleId == 0) {
+        return;
     }
-    bool takeOut = !Folders::isTakenOut(titleId);
-    Folders::setTakenOut(titleId, takeOut);
-    DEBUG_FUNCTION_LINE("%016llX %s the %s folder", titleId, takeOut ? "taken out of" : "put back into", Folders::folderName(folder));
-
-    //! taken out: stay in the folder on the next title; put back: select the folder icon
-    uint64_t next = titleId;
-    if (takeOut) {
-        auto layout = currentLayout();
-        next        = 0;
-        for (size_t i = 0; i < layout.size(); i++) {
-            if (layout[i] == titleId) {
-                next = i + 1 < layout.size() ? layout[i + 1] : (i > 0 ? layout[i - 1] : 0);
-                break;
-            }
-        }
-    } else {
-        next = folder;
+    if (titleId == Folders::FOLDER_SYSTEM || titleId == Folders::FOLDER_HOMEBREW) {
+        setTitleText("Built-in folders can't be renamed or deleted");
+        return;
     }
-    afterFolderChange(next);
-    folderMembershipChanged(this);
-
-    std::string message = std::string(takeOut ? "Moved out of the " : "Moved back into the ") + Folders::folderName(folder) + " folder";
-    setTitleText(message);
+    folderMenuRequested(this, titleId);
 }
 
 int32_t GuiIconGrid::offsetForTitleId(uint64_t titleId) {
@@ -393,8 +445,15 @@ void GuiIconGrid::resortPositions() {
     for (auto &x : gameInfoContainers) {
         const gameInfo *info = x.second->info;
         int group            = Folders::isFolder(x.first) ? 0 : (isSystemTitle(info) ? 1 : 2);
-        //! folders keep their fixed order (System, Homebrew)
-        std::string key = group == 0 ? "" : normalizeForSearch(displayName(info));
+        //! folders: System, Homebrew, then the user's folders by name
+        std::string key;
+        if (x.first == Folders::FOLDER_SYSTEM) {
+            key = "\x01";
+        } else if (x.first == Folders::FOLDER_HOMEBREW) {
+            key = "\x02";
+        } else {
+            key = (group == 0 ? "\x03" : "") + normalizeForSearch(displayName(info));
+        }
         entries.push_back({group, key, x.first});
     }
     containerMutex.unlock();

@@ -30,7 +30,7 @@ public:
           wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
           settingsTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZL, true), switchLayoutTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZR, true),
           plusTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_PLUS, true),
-          hintText("A Open  B Back  Y Folder  + Search  X User  L/R Pages  ZL Settings", 26, glm::vec4(1.0f)) {
+          hintText("A Open  B Back  Y Move  + Search  X User  L/R Pages  ZL Settings", 26, glm::vec4(1.0f)) {
         settingsButton.setClickable(true);
         settingsButton.setImage(&settingsIcon);
         settingsButton.setTrigger(&touchTrigger);

@@ -52,7 +52,13 @@ public:
 
     void openFolder(uint64_t folder) override;
 
-    void refreshFolders() override;
+    void refreshFolders(const std::vector<uint64_t> &preferred = {}) override;
+
+    uint64_t neighborOf(uint64_t titleId) override;
+
+    void showMessage(const std::string &message) override {
+        setTitleText(message);
+    }
 
     std::vector<uint64_t> getDisplayOrder() override {
         return currentLayout();
@@ -81,9 +87,10 @@ private:
 
     //! folder whose content is shown, 0 for the main grid
     uint64_t currentFolder = 0;
-    gameInfo folderInfos[2]{};
-    GuiImageData *folderImages[2]{};
+    std::map<uint64_t, gameInfo *> folderInfos;      // fixed and user folders
+    std::map<uint32_t, GuiImageData *> folderImages; // by color
 
+    //! create / rename / remove the folder icons to match Folders
     void setupFolders();
 
     bool folderHasTitles(uint64_t folder);
@@ -93,7 +100,7 @@ private:
 
     void OnBackClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
 
-    void OnFolderToggleClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
+    void OnFolderMenuClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
 
     bool matchesFilter(const gameInfo *info) const;
 
@@ -120,7 +127,7 @@ private:
     GuiTrigger buttonBTrigger;
     GuiTrigger buttonYTrigger;
     GuiButton backButton;
-    GuiButton folderToggleButton;
+    GuiButton folderMenuButton;
     GuiButton leftButton;
     GuiButton rightButton;
     GuiButton downButton;

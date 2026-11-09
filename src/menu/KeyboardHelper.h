@@ -20,7 +20,8 @@ public:
 
     static void drawDRC();
 
-    bool openKeyboard();
+    //! maxTextLength: -1 for unlimited
+    bool openKeyboard(int32_t maxTextLength = -1);
 
     bool isReady() const {
         return keyboardCreated;
