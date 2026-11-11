@@ -71,23 +71,23 @@ void MainWindow::setupUserButton() {
         return;
     }
 
-    userButton = new GuiButton(96, 96);
+    //! a framed tile with the Mii, like the user icon of the Wii U Menu
+    userFrameData  = Resources::GetImageData("userFrame.png");
+    userFrameImage = new GuiImage(userFrameData);
+    userButton     = new GuiButton(userFrameImage->getWidth(), userFrameImage->getHeight());
+    userButton->setImage(userFrameImage);
     if (!account->miiTga.empty()) {
         userMiiData = new GuiImageData(account->miiTga.data(), account->miiTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
         if (userMiiData->getTexture()) {
             userMiiImage = new GuiImage(userMiiData);
-            userMiiImage->setScale(0.75f);
-            userButton->setImage(userMiiImage);
+            userMiiImage->setScale(0.72f);
+            userMiiImage->setAlignment(ALIGN_CENTER | ALIGN_MIDDLE);
+            userButton->setIcon(userMiiImage);
         }
     }
-    userNameText = new GuiText(account->name.c_str(), 26, glm::vec4(1.0f));
-    userNameText->setAlignment(ALIGN_RIGHT | ALIGN_MIDDLE);
-    userNameText->setPosition(-100, 0);
-    userNameText->setMaxWidth(170, GuiText::DOTTED);
-    userButton->setLabel(userNameText);
 
     userButton->setAlignment(ALIGN_RIGHT | ALIGN_TOP);
-    userButton->setPosition(-12, -6);
+    userButton->setPosition(-14, -10);
     userButton->setTrigger(&userTouchTrigger);
     userButton->setTrigger(&userWpadTrigger);
     userButton->setTrigger(&userXTrigger);
