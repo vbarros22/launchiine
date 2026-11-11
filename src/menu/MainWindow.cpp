@@ -93,7 +93,11 @@ void MainWindow::setupUserButton() {
     userButton->setTrigger(&userXTrigger);
     userButton->setEffectGrow();
     userButton->clicked.connect(this, &MainWindow::OnUserButtonClicked);
-    append(userButton);
+    //! alignment is relative to the parent: without a full screen frame the button would
+    //! sit in the middle of the screen
+    userFrame = new GuiFrame(width, height);
+    userFrame->append(userButton);
+    append(userFrame);
 }
 
 void MainWindow::OnUserButtonClicked(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
@@ -216,8 +220,8 @@ MainWindow::~MainWindow() {
         remove(accountFrame);
         accountFrame = nullptr;
     }
-    if (userButton) {
-        remove(userButton);
+    if (userFrame) {
+        remove(userFrame);
     }
 }
 
@@ -545,6 +549,9 @@ void MainWindow::OnLayoutSwitchEffectFinish(GuiElement *element) {
     appendDrc(currentDrcFrame);
     //! re-append on top
     append(mainSwitchButtonFrame);
+    if (userFrame) {
+        append(userFrame);
+    }
 
     currentTvFrame->resetState();
     currentTvFrame->setEffect(EFFECT_FADE, 15, 255);

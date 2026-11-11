@@ -244,6 +244,7 @@ private:
     KeyboardPurpose keyboardPurpose  = KeyboardPurpose::Search;
     int32_t pendingKeyboardFrames    = 0; // open the keyboard after the A press is released
     int32_t pendingKeyboardMaxLength = -1;
+    GuiFrame *userFrame              = nullptr;
     GuiButton *userButton            = nullptr;
     GuiImageData *userMiiData        = nullptr;
     GuiImage *userMiiImage           = nullptr;
