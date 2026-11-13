@@ -109,6 +109,9 @@ private:
 
     static const int32_t MAX_ROWS = 3;
     static const int32_t MAX_COLS = 5;
+    //! distance between two pages: a bit more than 5 columns, so the neighbouring pages
+    //! peek in at the screen edges like in the Wii U Menu
+    static const int32_t PAGE_STRIDE = MAX_COLS * 192 + 30;
 
     GuiImageData *backgroundData = nullptr;
     GuiImage *backgroundImage    = nullptr;
@@ -178,6 +181,12 @@ private:
 
 
     int32_t curPage = 0;
+    uint32_t pageCount = 1;
+    GuiImageData *pageDotData       = nullptr;
+    GuiImageData *pageDotActiveData = nullptr;
+    GuiImage *pageDot               = nullptr;
+    GuiImage *pageDotActive         = nullptr;
+    void drawPageDots(CVideo *pVideo);
     int32_t listOffset;
     uint64_t selectedGame;
     int32_t currentLeftPosition;
@@ -234,6 +243,7 @@ private:
     GuiImageData *updateBadgeData = nullptr;
     uint32_t updatesSeen = 0;
     bool noticeShown     = false;
+    bool messageShown    = false;
 
     std::recursive_mutex positionMutex;
     std::recursive_mutex containerMutex;

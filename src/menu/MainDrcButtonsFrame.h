@@ -46,12 +46,11 @@ public:
         //! between TV and GamePad, which looked like a flicker. It stays off until the TV
         //! gets a view of its own.
 
-        //! controls, the A/B/Y/+ actions are not discoverable otherwise. At the top: the
-        //! name of the selected title is shown at the bottom.
-        hintText.setAlignment(ALIGN_CENTER | ALIGN_TOP);
-        hintText.setPosition(0, -18);
-        hintText.setMaxWidth(w - 320, GuiText::DOTTED); // keep clear of the settings tab and the user icon
-        hintText.setBlurGlowColor(3.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
+        //! controls, the A/B/Y/+ actions are not discoverable otherwise. At the bottom:
+        //! the top holds the page indicator, like in the Wii U Menu.
+        hintText.setAlignment(ALIGN_CENTER | ALIGN_BOTTOM);
+        hintText.setPosition(0, 10);
+        hintText.setMaxWidth(w - 80, GuiText::DOTTED);
         append(&hintText);
 
         gameListFilterButton.setClickable(true);

@@ -41,7 +41,7 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
       buttonYTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_Y, true),
       backButton(w, h), folderMenuButton(w, h), leftButton(w, h), rightButton(w, h), downButton(w, h), upButton(w, h), launchButton(w, h),
       arrowRightImageData(Resources::GetImageData("rightArrow.png")), arrowLeftImageData(Resources::GetImageData("leftArrow.png")), arrowRightImage(arrowRightImageData),
-      arrowLeftImage(arrowLeftImageData), arrowRightButton(arrowRightImage.getWidth(), arrowRightImage.getHeight()), arrowLeftButton(arrowLeftImage.getWidth(), arrowLeftImage.getHeight()),
+      arrowLeftImage(arrowLeftImageData), arrowRightButton(arrowRightImage.getWidth() / 1.5f, arrowRightImage.getHeight() / 1.5f), arrowLeftButton(arrowLeftImage.getWidth() / 1.5f, arrowLeftImage.getHeight() / 1.5f),
       noIcon(Resources::GetFile("noGameIcon.png"), Resources::GetFileSize("noGameIcon.png"), GX2_TEX_CLAMP_MODE_MIRROR),
       emptyIcon(Resources::GetFile("iconEmpty.png"), Resources::GetFileSize("iconEmpty.png"), GX2_TEX_CLAMP_MODE_MIRROR) {
 
@@ -91,9 +91,12 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     folderMenuButton.clicked.connect(this, &GuiIconGrid::OnFolderMenuClick);
     this->append(&folderMenuButton);
 
+    //! the arrow textures are 1.5x for 1080p
+    arrowLeftImage.setScale(1.0f / 1.5f);
+    arrowRightImage.setScale(1.0f / 1.5f);
     arrowLeftButton.setImage(&arrowLeftImage);
     arrowLeftButton.setEffectGrow();
-    arrowLeftButton.setPosition(40, 0);
+    arrowLeftButton.setPosition(6, 0);
     arrowLeftButton.setAlignment(ALIGN_LEFT | ALIGN_MIDDLE);
     arrowLeftButton.setTrigger(&touchTrigger);
     arrowLeftButton.setTrigger(&wpadTouchTrigger);
@@ -105,7 +108,7 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
 
     arrowRightButton.setImage(&arrowRightImage);
     arrowRightButton.setEffectGrow();
-    arrowRightButton.setPosition(-40, 0);
+    arrowRightButton.setPosition(-6, 0);
     arrowRightButton.setAlignment(ALIGN_RIGHT | ALIGN_MIDDLE);
     arrowRightButton.setTrigger(&touchTrigger);
     arrowRightButton.setTrigger(&wpadTouchTrigger);
@@ -114,8 +117,8 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     arrowRightButton.clicked.connect(this, &GuiIconGrid::OnRightArrowClick);
     append(&arrowRightButton);
 
-    // at most we are rendering 2 screens at the same time
-    for (int i = 0; i < MAX_COLS * MAX_ROWS * 2; i++) {
+    // while scrolling up to 4 pages are on screen (2 full ones and the 2 peeking in)
+    for (int i = 0; i < MAX_COLS * MAX_ROWS * 4; i++) {
         GameIcon *image = new GameIcon(&emptyIcon);
         emptyIcons.push_back(image);
         GuiButton *button = new GuiButton(emptyIcon.getWidth(), emptyIcon.getHeight());
@@ -126,7 +129,7 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
         emptyButtons.push_back(button);
     }
 
-    gameTitle.setPosition(0, -320);
+    gameTitle.setPosition(0, -292);
     setTitleText("");
     append(&gameTitle);
 
@@ -139,11 +142,20 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
         (*bubbleImages[i])->setParent(this);
         (*bubbleImages[i])->setScale(1.0f / 1.5f);
     }
+    pageDotData       = Resources::GetImageData("pageDot.png");
+    pageDotActiveData = Resources::GetImageData("pageDotActive.png");
+    pageDot           = new GuiImage(pageDotData);
+    pageDotActive     = new GuiImage(pageDotActiveData);
+    for (auto *dot : {pageDot, pageDotActive}) {
+        dot->setParent(this);
+        dot->setScale(1.0f / 1.5f);
+    }
+
     bubbleText.setParent(this);
     bubbleText.setMaxWidth(700, GuiText::DOTTED);
 
     updateBadgeData = Resources::GetImageData("updateBadge.png");
-    updateNotice.setPosition(0, -272);
+    updateNotice.setPosition(0, -294);
     updateNotice.setText("");
     append(&updateNotice);
 }
@@ -188,6 +200,10 @@ GuiIconGrid::~GuiIconGrid() {
     for (auto *data : bubbleData) {
         Resources::RemoveImageData(data);
     }
+    delete pageDot;
+    delete pageDotActive;
+    Resources::RemoveImageData(pageDotData);
+    Resources::RemoveImageData(pageDotActiveData);
 }
 
 void GuiIconGrid::setupFolders() {
@@ -446,9 +462,10 @@ static std::string displayName(const gameInfo *info) {
 //! glyph caches.
 void GuiIconGrid::setTitleText(const std::string &text) {
     constexpr int32_t MAX_WIDTH = 1150;
-    constexpr int32_t MAX_SIZE  = 52;
-    constexpr int32_t MIN_SIZE  = 30;
+    constexpr int32_t MAX_SIZE  = 40;
+    constexpr int32_t MIN_SIZE  = 26;
 
+    messageShown = !text.empty();
     gameTitle.setMaxWidth(0, GuiText::DOTTED); // measure without clamping
     gameTitle.setFontSize(MAX_SIZE);
     gameTitle.setText(text.c_str());
@@ -713,7 +730,7 @@ void GuiIconGrid::OnGameTitleListUpdated(GameList *gameList) {
     //! show the page of the selected title right away, without scrolling there
     int32_t offset      = offsetForTitleId(selectedGame);
     curPage             = offset >= 0 ? offset / (MAX_COLS * MAX_ROWS) : 0;
-    targetLeftPosition  = -curPage * getWidth();
+    targetLeftPosition  = -curPage * PAGE_STRIDE;
     currentLeftPosition = targetLeftPosition;
     bUpdatePositions    = true;
 }
@@ -988,19 +1005,15 @@ void GuiIconGrid::process() {
         resortPositions();
     }
 
-    if (currentLeftPosition < targetLeftPosition) {
-        currentLeftPosition += 35;
-
-        if (currentLeftPosition > targetLeftPosition)
+    //! ease out: fast at first, slowing down near the page
+    if (currentLeftPosition != targetLeftPosition) {
+        int32_t diff = targetLeftPosition - currentLeftPosition;
+        int32_t step = std::max<int32_t>(8, std::abs(diff) / 5);
+        if (std::abs(diff) <= step) {
             currentLeftPosition = targetLeftPosition;
-
-        bUpdatePositions = true;
-    } else if (currentLeftPosition > targetLeftPosition) {
-        currentLeftPosition -= 35;
-
-        if (currentLeftPosition < targetLeftPosition)
-            currentLeftPosition = targetLeftPosition;
-
+        } else {
+            currentLeftPosition += diff > 0 ? step : -step;
+        }
         bUpdatePositions = true;
     }
 
@@ -1034,7 +1047,8 @@ void GuiIconGrid::process() {
         }
         containerMutex.unlock();
     }
-    bool showNotice = Updates::hasUpdate(selectedGame);
+    //! same spot as the messages, which win
+    bool showNotice = Updates::hasUpdate(selectedGame) && !messageShown;
     if (showNotice != noticeShown) {
         noticeShown = showNotice;
         updateNotice.setText(showNotice ? "Update available" : "");
@@ -1054,7 +1068,6 @@ void GuiIconGrid::updateButtonPositions() {
     arrowLeftButton.setState(GuiElement::STATE_DISABLED);
     arrowLeftButton.setVisible(false);
 
-    int32_t col = 0, row = 0, listOff = 0;
 
     // create an empty vector of pairs
     std::vector<std::pair<uint64_t, GameInfoContainer *>> vec;
@@ -1093,7 +1106,8 @@ void GuiIconGrid::updateButtonPositions() {
         curPage = pages - 1;
     }
 
-    targetLeftPosition = -curPage * getWidth();
+    targetLeftPosition = -curPage * PAGE_STRIDE;
+    pageCount          = pages;
 
     if ((uint32_t) curPage < (pages - 1)) {
         arrowRightButton.clearState(GuiElement::STATE_DISABLED);
@@ -1106,75 +1120,46 @@ void GuiIconGrid::updateButtonPositions() {
         bringToFront(&arrowLeftButton);
     }
 
-    uint32_t startPage = -(currentLeftPosition / getWidth());
-    uint32_t endPage   = startPage;
+    constexpr int32_t PER_PAGE = MAX_COLS * MAX_ROWS;
+    const float colStride      = noIcon.getWidth() * 1.5f;
+    const float rowStride      = noIcon.getHeight() * 1.5f;
+    //! a page is drawn when any of its tiles (half width ~93) reaches into the screen
+    const float reach = getWidth() * 0.5f + (MAX_COLS * 0.5f - 0.5f) * colStride + 100.0f;
 
-    if (targetLeftPosition != currentLeftPosition) {
-        endPage++;
-        if (endPage > pages) {
-            endPage = pages;
-        }
-    }
-    uint32_t startValue = startPage * (MAX_COLS * MAX_ROWS);
+    //! empty slots mark free space on the main grid like in the Wii U Menu; in search
+    //! results and folders they only bury the few real entries, leave the slot blank
+    bool showEmptySlot = filterText.empty() && currentFolder == 0;
 
-    positionButtons.clear();
-    for (uint32_t i = 0; i < startValue; i++) {
-        positionButtons.push_back(nullptr);
-    }
-
-    for (uint32_t i = startPage * (MAX_COLS * MAX_ROWS); i < (endPage + 1) * (MAX_COLS * MAX_ROWS); i++) {
-        listOff            = i / (MAX_COLS * MAX_ROWS);
-        GuiButton *element = nullptr;
-        float posX         = currentLeftPosition + listOff * width + (col * (noIcon.getWidth() + noIcon.getWidth() * 0.5f) - (MAX_COLS * 0.5f - 0.5f) * (noIcon.getWidth() + noIcon.getWidth() * 0.5f));
-        float posY         = -row * (noIcon.getHeight() + noIcon.getHeight() * 0.5f) + (MAX_ROWS * 0.5f - 0.5f) * (noIcon.getHeight() + noIcon.getHeight() * 0.5f) + 30.0f;
-
-        if (i < layout.size()) {
-            uint64_t titleID = layout.at(i);
-            if (titleID > 0) {
-                GameInfoContainer *container = nullptr;
-                containerMutex.lock();
-                if (gameInfoContainers.find(titleID) != gameInfoContainers.end()) {
-                    container = gameInfoContainers[titleID];
-                }
-                containerMutex.unlock();
-                if (container != nullptr) {
-                    element = container->button;
-                }
-            }
-        }
-
-        //! Empty slots mark free space on the main grid like in the Wii U Menu; in search
-        //! results and folders they only bury the few real entries, leave the slot blank.
-        bool showEmptySlot = filterText.empty() && currentFolder == 0;
-        if (element == nullptr && showEmptySlot) {
-            if (emptyButtons.size() <= emptyIconUse) {
-                break;
-            }
-            element = emptyButtons.at(emptyIconUse);
-            emptyIconUse++;
-        }
-        positionButtons.push_back(element);
-        if (element == nullptr) {
-            col++;
-            if (col >= MAX_COLS) {
-                col = 0;
-                row++;
-            }
-            if (row >= MAX_ROWS) {
-                row = 0;
-            }
+    positionButtons.assign(pages * PER_PAGE, nullptr);
+    for (uint32_t page = 0; page < pages; page++) {
+        float pageX = currentLeftPosition + (float) page * PAGE_STRIDE;
+        if (pageX < -reach || pageX > reach) {
             continue;
         }
-        element->setPosition(posX, posY);
-        append(element);
-
-        col++;
-        if (col >= MAX_COLS) {
-            col = 0;
-            row++;
-        }
-        if (row >= MAX_ROWS) {
-            row = 0;
+        for (int32_t slot = 0; slot < PER_PAGE; slot++) {
+            uint32_t i         = page * PER_PAGE + slot;
+            int32_t col        = slot % MAX_COLS;
+            int32_t row        = slot / MAX_COLS;
+            GuiButton *element = nullptr;
+            if (i < layout.size() && layout.at(i) > 0) {
+                containerMutex.lock();
+                auto it = gameInfoContainers.find(layout.at(i));
+                if (it != gameInfoContainers.end()) {
+                    element = it->second->button;
+                }
+                containerMutex.unlock();
+            }
+            if (element == nullptr && showEmptySlot && emptyIconUse < emptyButtons.size()) {
+                element = emptyButtons.at(emptyIconUse++);
+            }
+            if (element == nullptr) {
+                continue;
+            }
+            float posX = pageX + (col - (MAX_COLS * 0.5f - 0.5f)) * colStride;
+            float posY = -row * rowStride + (MAX_ROWS * 0.5f - 0.5f) * rowStride + 30.0f;
+            element->setPosition(posX, posY);
+            append(element);
+            positionButtons[i] = element;
         }
     }
 
@@ -1205,9 +1190,25 @@ void GuiIconGrid::draw(CVideo *pVideo) {
     containerMutex.lock();
     positionMutex.lock();
     GuiFrame::draw(pVideo);
+    drawPageDots(pVideo);
     drawNameBubble(pVideo);
     positionMutex.unlock();
     containerMutex.unlock();
+}
+
+//! page indicator at the top: one dot per page, the current one wider and cyan
+void GuiIconGrid::drawPageDots(CVideo *pVideo) {
+    if (pageCount <= 1) {
+        return;
+    }
+    constexpr float SPACING = 32.0f;
+    constexpr float POS_Y   = 334.0f;
+    float first             = -(pageCount - 1) * SPACING * 0.5f;
+    for (uint32_t i = 0; i < pageCount; i++) {
+        GuiImage *dot = i == (uint32_t) curPage ? pageDotActive : pageDot;
+        dot->setPosition(first + i * SPACING, POS_Y);
+        dot->draw(pVideo);
+    }
 }
 
 //! containerMutex and positionMutex are held
