@@ -80,14 +80,14 @@ void MainWindow::setupUserButton() {
         userMiiData = new GuiImageData(account->miiTga.data(), account->miiTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
         if (userMiiData->getTexture()) {
             userMiiImage = new GuiImage(userMiiData);
-            userMiiImage->setScale(0.72f);
+            userMiiImage->setScale(0.47f);
             userMiiImage->setAlignment(ALIGN_CENTER | ALIGN_MIDDLE);
             userButton->setIcon(userMiiImage);
         }
     }
 
     userButton->setAlignment(ALIGN_RIGHT | ALIGN_TOP);
-    userButton->setPosition(-14, -10);
+    userButton->setPosition(-16, -4);
     userButton->setTrigger(&userTouchTrigger);
     userButton->setTrigger(&userWpadTrigger);
     userButton->setTrigger(&userXTrigger);

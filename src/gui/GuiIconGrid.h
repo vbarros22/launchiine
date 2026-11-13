@@ -111,6 +111,10 @@ private:
     static const int32_t MAX_COLS = 5;
 
     GuiParticleImage particleBgImage;
+    //! translucent wash in the open folder's color, like the Wii U Menu
+    GuiImage folderTint;
+    float folderTintAlpha  = 0.0f;
+    uint64_t folderTintFor = 0;
 
     GuiSound *buttonClickSound;
 

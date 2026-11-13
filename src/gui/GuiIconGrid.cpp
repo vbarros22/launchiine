@@ -28,7 +28,7 @@
 
 GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByName)
     : GuiTitleBrowser(w, h, GameIndex),
-      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(1.0f)),
+      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(1.0f)),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
       leftTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_LEFT | GuiTrigger::STICK_L_LEFT, true),
@@ -45,6 +45,8 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
       emptyIcon(Resources::GetFile("iconEmpty.png"), Resources::GetFileSize("iconEmpty.png"), GX2_TEX_CLAMP_MODE_MIRROR) {
 
     particleBgImage.setParent(this);
+    folderTint.setParent(this);
+    folderTint.setAlpha(0.0f);
     //! GameIndex is the title id to select once the list is loaded
     setSelectedGame(GameIndex);
     listOffset          = 0;
@@ -954,6 +956,20 @@ void GuiIconGrid::process() {
     }
     gameLaunchTimer++;
 
+    //! fade the folder color in when a folder opens and out when it closes
+    if (currentFolder != 0 && currentFolder != folderTintFor) {
+        uint32_t rgb = Folders::folderColor(currentFolder);
+        folderTint.setImageColor((GX2Color){(uint8_t) (rgb >> 16), (uint8_t) (rgb >> 8), (uint8_t) rgb, 255});
+        folderTintFor = currentFolder;
+    }
+    float tintTarget = currentFolder != 0 ? 0.35f : 0.0f;
+    if (folderTintAlpha < tintTarget) {
+        folderTintAlpha = std::min(tintTarget, folderTintAlpha + 0.035f);
+    } else if (folderTintAlpha > tintTarget) {
+        folderTintAlpha = std::max(tintTarget, folderTintAlpha - 0.035f);
+    }
+    folderTint.setAlpha(folderTintAlpha);
+
     GuiFrame::process();
 }
 
@@ -1109,6 +1125,10 @@ void GuiIconGrid::draw(CVideo *pVideo) {
     pVideo->setStencilRender(true);
     particleBgImage.draw(pVideo);
     pVideo->setStencilRender(false);
+
+    if (folderTintAlpha > 0.0f) {
+        folderTint.draw(pVideo);
+    }
 
     containerMutex.lock();
     positionMutex.lock();
