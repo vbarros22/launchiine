@@ -31,6 +31,10 @@
 #include <sysapp/launch.h>
 #include <thread>
 
+//! every screen is laid out in these units (see src/video/CVideo.cpp)
+static constexpr int32_t LAYOUT_WIDTH  = 1280;
+static constexpr int32_t LAYOUT_HEIGHT = 720;
+
 Application *Application::applicationInstance = nullptr;
 bool Application::exitApplication             = false;
 bool Application::quitRequest                 = false;
@@ -97,7 +101,7 @@ void Application::quit(int32_t code) {
 }
 
 void Application::fadeOut() {
-    GuiImage fadeOut(video->getTvWidth(), video->getTvHeight(), (GX2Color){0, 0, 0, 255});
+    GuiImage fadeOut(LAYOUT_WIDTH, LAYOUT_HEIGHT, (GX2Color){0, 0, 0, 255});
 
     for (int32_t i = 0; i < 255; i += 10) {
         if (i > 255)
@@ -173,7 +177,8 @@ bool Application::procUI() {
                     libgui_memoryInitialize();
 
                     DEBUG_FUNCTION_LINE("Initialize video");
-                    video = new CVideo(GX2_TV_SCAN_MODE_720P, GX2_DRC_RENDER_MODE_SINGLE);
+                    //! TV at the console's output resolution (up to 1080p), layout in 1280x720 units
+                    video = new CVideo(-1, GX2_DRC_RENDER_MODE_SINGLE);
                     DEBUG_FUNCTION_LINE("Video size %i x %i", video->getTvWidth(), video->getTvHeight());
 
                     //! setup default Font (only once, see PROCUI_STATUS_RELEASE_FOREGROUND)
@@ -185,7 +190,7 @@ bool Application::procUI() {
 
                     if (mainWindow == nullptr) {
                         DEBUG_FUNCTION_LINE("Initialize main window");
-                        mainWindow = new MainWindow(video->getTvWidth(), video->getTvHeight());
+                        mainWindow = new MainWindow(LAYOUT_WIDTH, LAYOUT_HEIGHT);
                     }
                 }
                 executeProcess = true;
@@ -220,7 +225,7 @@ void Application::executeThread() {
             if (keyboardOpen) {
                 break;
             }
-            if (!i->update(video->getTvWidth(), video->getTvHeight()))
+            if (!i->update(LAYOUT_WIDTH, LAYOUT_HEIGHT))
                 continue;
 
             //! still read the controllers so their "last state" is fresh, but don't act on it

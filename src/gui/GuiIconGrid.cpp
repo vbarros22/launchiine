@@ -52,7 +52,8 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     backgroundImage->setScaleY((float) h / backgroundImage->getHeight());
     backgroundImage->setParent(this);
     particleBgImage.setParent(this);
-    particleBgImage.setAlpha(0.5f);
+    //! grey-blue bubbles, the default white ones are invisible on the light background
+    particleBgImage.setColorIntensity(glm::vec4(0.66f, 0.75f, 0.82f, 1.0f));
     folderTint.setParent(this);
     folderTint.setAlpha(0.0f);
     //! GameIndex is the title id to select once the list is loaded

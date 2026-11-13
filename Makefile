@@ -26,7 +26,8 @@ SOURCES		:=	src \
 				src/menu \
 				src/resources \
 				src/system \
-				src/utils
+				src/utils \
+				src/video
 DATA		:=	data \
 				data/images \
 				data/sounds \
