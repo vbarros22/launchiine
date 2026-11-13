@@ -29,7 +29,7 @@
 
 GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByName)
     : GuiTitleBrowser(w, h, GameIndex),
-      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(0.22f, 0.24f, 0.26f, 1.0f)), updateNotice((char *) nullptr, 26, glm::vec4(0.9f, 0.45f, 0.0f, 1.0f)),
+      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(0.22f, 0.24f, 0.26f, 1.0f)), updateNotice((char *) nullptr, 26, glm::vec4(0.9f, 0.45f, 0.0f, 1.0f)), bubbleText((char *) nullptr, 34, glm::vec4(0.25f, 0.27f, 0.29f, 1.0f)),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
       leftTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_LEFT | GuiTrigger::STICK_L_LEFT, true),
@@ -130,6 +130,18 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     setTitleText("");
     append(&gameTitle);
 
+    //! name bubble pieces, the textures are 1.5x for 1080p
+    const char *bubbleFiles[5] = {"bubbleLeft.png", "bubbleMid.png", "bubbleRight.png", "bubblePointerDown.png", "bubblePointerUp.png"};
+    GuiImage **bubbleImages[5] = {&bubbleLeft, &bubbleMid, &bubbleRight, &bubblePtrDown, &bubblePtrUp};
+    for (int i = 0; i < 5; i++) {
+        bubbleData[i]     = Resources::GetImageData(bubbleFiles[i]);
+        *bubbleImages[i]  = new GuiImage(bubbleData[i]);
+        (*bubbleImages[i])->setParent(this);
+        (*bubbleImages[i])->setScale(1.0f / 1.5f);
+    }
+    bubbleText.setParent(this);
+    bubbleText.setMaxWidth(700, GuiText::DOTTED);
+
     updateBadgeData = Resources::GetImageData("updateBadge.png");
     updateNotice.setPosition(0, -272);
     updateNotice.setText("");
@@ -168,6 +180,14 @@ GuiIconGrid::~GuiIconGrid() {
     Resources::RemoveImageData(updateBadgeData);
     delete backgroundImage;
     Resources::RemoveImageData(backgroundData);
+    delete bubbleLeft;
+    delete bubbleMid;
+    delete bubbleRight;
+    delete bubblePtrDown;
+    delete bubblePtrUp;
+    for (auto *data : bubbleData) {
+        Resources::RemoveImageData(data);
+    }
 }
 
 void GuiIconGrid::setupFolders() {
@@ -596,9 +616,9 @@ void GuiIconGrid::setFilter(const std::string &filter) {
 
 void GuiIconGrid::setSelectedGame(uint64_t idx) {
     this->selectedGame = idx;
-    if (idx == 0) {
-        setTitleText("");
-    }
+    //! the bottom text only shows messages now, they last until the selection moves
+    setTitleText("");
+    bubbleName.clear();
 
     containerMutex.lock();
     GameInfoContainer *container = nullptr;
@@ -606,7 +626,7 @@ void GuiIconGrid::setSelectedGame(uint64_t idx) {
         container = x.second;
         if (x.first == idx) {
             container->image->setSelected(true);
-            setTitleText(displayName(container->info));
+            bubbleName = displayName(container->info);
         } else {
             container->image->setSelected(false);
         }
@@ -952,7 +972,7 @@ void GuiIconGrid::OnGameTitleUpdated(gameInfo *info) {
     if (container != nullptr) {
         container->updateImageData();
         if (info->titleId == selectedGame) {
-            setTitleText(displayName(info));
+            bubbleName = displayName(info);
         }
     }
 
@@ -1185,6 +1205,65 @@ void GuiIconGrid::draw(CVideo *pVideo) {
     containerMutex.lock();
     positionMutex.lock();
     GuiFrame::draw(pVideo);
+    drawNameBubble(pVideo);
     positionMutex.unlock();
     containerMutex.unlock();
+}
+
+//! containerMutex and positionMutex are held
+void GuiIconGrid::drawNameBubble(CVideo *pVideo) {
+    if (selectedGame == 0 || bubbleName.empty()) {
+        return;
+    }
+    auto it = gameInfoContainers.find(selectedGame);
+    if (it == gameInfoContainers.end() || it->second->button == nullptr) {
+        return;
+    }
+    GuiButton *button = it->second->button;
+    if (std::find(positionButtons.begin(), positionButtons.end(), button) == positionButtons.end()) {
+        return; // not on the visible pages
+    }
+    float halfW = getWidth() * 0.5f;
+    float cx    = button->getCenterX();
+    float cy    = button->getCenterY();
+    if (cx < -halfW || cx > halfW) {
+        return; // scrolled out while changing pages
+    }
+
+    if (bubbleShownName != bubbleName) {
+        bubbleShownName = bubbleName;
+        bubbleText.setText(bubbleName.c_str());
+    }
+
+    //! layout units; the tile around a 128 icon is ~186 wide, the pointer tip touches it
+    constexpr float BODY_H    = 64.0f;
+    constexpr float RADIUS    = 32.0f;
+    constexpr float PADDING   = 28.0f;
+    constexpr float TIP_DIST  = 87.0f;
+    constexpr float BODY_DIST = TIP_DIST + 49.0f;
+    float textW = std::min(bubbleText.getTextWidth(), 700);
+    float bodyW = std::max(textW + PADDING * 2.0f, 120.0f);
+    bool below  = cy > 150.0f; // top row: no room above
+    float bodyX = std::max(-halfW + bodyW * 0.5f + 8.0f, std::min(halfW - bodyW * 0.5f - 8.0f, cx));
+    float bodyY = below ? cy - BODY_DIST : cy + BODY_DIST;
+    float left  = bodyX - bodyW * 0.5f;
+    float right = bodyX + bodyW * 0.5f;
+
+    bubbleLeft->setPosition(left + 10.0f, bodyY);
+    bubbleRight->setPosition(right - 10.0f, bodyY);
+    bubbleMid->setScaleX((bodyW - RADIUS * 2.0f + 2.0f) / bubbleMid->getWidth());
+    bubbleMid->setPosition(bodyX, bodyY);
+    float ptrX       = std::max(left + 40.0f, std::min(right - 40.0f, cx));
+    GuiImage *ptr    = below ? bubblePtrUp : bubblePtrDown;
+    ptr->setPosition(ptrX, below ? bodyY + BODY_H * 0.5f + 7.0f : bodyY - BODY_H * 0.5f - 7.0f);
+    bubbleText.setPosition(bodyX, bodyY);
+
+    //! on top of the icons, which write depth
+    GX2SetDepthOnlyControl(GX2_DISABLE, GX2_DISABLE, GX2_COMPARE_FUNC_ALWAYS);
+    bubbleLeft->draw(pVideo);
+    bubbleMid->draw(pVideo);
+    bubbleRight->draw(pVideo);
+    ptr->draw(pVideo);
+    bubbleText.draw(pVideo);
+    GX2SetDepthOnlyControl(GX2_ENABLE, GX2_ENABLE, GX2_COMPARE_FUNC_LEQUAL);
 }

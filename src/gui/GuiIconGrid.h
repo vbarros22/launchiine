@@ -122,6 +122,7 @@ private:
 
     GuiText gameTitle;
     GuiText updateNotice; // "Update available" under the selected title
+    GuiText bubbleText;   // name of the selected title, in the bubble
     GuiTrigger touchTrigger;
     GuiTrigger wpadTouchTrigger;
     GuiTrigger leftTrigger;
@@ -215,6 +216,17 @@ private:
         GuiButton *button;
         GuiImage *badge = nullptr; // "update available", drawn as the button icon
     };
+
+    //! name bubble above (top row: below) the selected icon, like the Wii U Menu
+    void drawNameBubble(CVideo *pVideo);
+    GuiImageData *bubbleData[5] = {};
+    GuiImage *bubbleLeft     = nullptr;
+    GuiImage *bubbleMid      = nullptr;
+    GuiImage *bubbleRight    = nullptr;
+    GuiImage *bubblePtrDown  = nullptr;
+    GuiImage *bubblePtrUp    = nullptr;
+    std::string bubbleName;      // what the bubble should show
+    std::string bubbleShownName; // what bubbleText holds
 
     //! shows or hides the update badge of a title, render thread
     void setUpdateBadge(GameInfoContainer *container, bool show);
