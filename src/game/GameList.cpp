@@ -184,6 +184,67 @@ namespace {
         }
     }
 
+    //! Icon cache: reading ~190 iconTex.tga files from MLC/USB takes 6-7 s, one file on the
+    //! SD card is much faster. Per entry: title id (8 bytes), size (4 bytes), sanitized TGA.
+    constexpr const char *ICON_CACHE_FILE = "fs:/vol/external01/wiiu/launchiine/icons.bin";
+    constexpr uint32_t ICON_CACHE_MAGIC   = 0x4C494331; // "LIC1"
+
+    std::map<uint64_t, std::vector<uint8_t>> loadIconCache() {
+        std::map<uint64_t, std::vector<uint8_t>> result;
+        uint8_t *buffer = nullptr;
+        uint32_t size   = 0;
+        if (FSUtils::LoadFileToMem(ICON_CACHE_FILE, &buffer, &size) <= 0 || buffer == nullptr) {
+            return result;
+        }
+        auto read32 = [&](uint32_t pos) {
+            return ((uint32_t) buffer[pos] << 24) | ((uint32_t) buffer[pos + 1] << 16) | ((uint32_t) buffer[pos + 2] << 8) | buffer[pos + 3];
+        };
+        if (size >= 4 && read32(0) == ICON_CACHE_MAGIC) {
+            uint32_t pos = 4;
+            while (pos + 12 <= size) {
+                uint64_t titleId = ((uint64_t) read32(pos) << 32) | read32(pos + 4);
+                uint32_t length  = read32(pos + 8);
+                pos += 12;
+                if (length == 0 || length > size - pos) {
+                    break; // truncated file, keep what was complete
+                }
+                result[titleId].assign(buffer + pos, buffer + pos + length);
+                pos += length;
+            }
+        }
+        free(buffer);
+        DEBUG_FUNCTION_LINE("Loaded %d cached icons", (int) result.size());
+        return result;
+    }
+
+    void saveIconCache(const std::map<uint64_t, std::vector<uint8_t>> &icons) {
+        std::vector<uint8_t> data;
+        size_t total = 4;
+        for (auto const &x : icons) {
+            total += 12 + x.second.size();
+        }
+        data.reserve(total);
+        auto put32 = [&](uint32_t v) {
+            data.push_back(v >> 24);
+            data.push_back(v >> 16);
+            data.push_back(v >> 8);
+            data.push_back(v);
+        };
+        put32(ICON_CACHE_MAGIC);
+        for (auto const &x : icons) {
+            put32((uint32_t) (x.first >> 32));
+            put32((uint32_t) x.first);
+            put32(x.second.size());
+            data.insert(data.end(), x.second.begin(), x.second.end());
+        }
+        FSUtils::CreateSubfolder(NAME_CACHE_DIR);
+        if (FSUtils::saveBufferToFile(ICON_CACHE_FILE, data.data(), data.size()) != (int32_t) data.size()) {
+            DEBUG_FUNCTION_LINE("Failed to save the icon cache");
+        } else {
+            DEBUG_FUNCTION_LINE("Saved %d icons to the cache (%d KB)", (int) icons.size(), (int) (data.size() / 1024));
+        }
+    }
+
     //! Loader thread: reads and sanitizes the icon. No GX2 calls here.
     bool readTitleIcon(uint64_t titleId, const std::string &metaDir, std::vector<uint8_t> &outTga) {
         std::string iconPath = metaDir + "/iconTex.tga";
@@ -500,6 +561,11 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     std::map<uint64_t, CachedName> freshNames;
     bool cacheChanged = false;
 
+    std::map<uint64_t, std::vector<uint8_t>> cachedIcons = loadIconCache();
+    std::map<uint64_t, std::vector<uint8_t>> freshIcons;
+    std::vector<bool> iconFromCache(jobs.size(), false);
+    uint32_t iconCacheHits = 0;
+
     OSTime start     = OSGetTime();
     OSTime nameTicks = 0;
     OSTime iconTicks = 0;
@@ -532,7 +598,20 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         }
 
         OSTime t1    = OSGetTime();
-        bool hasIcon = readTitleIcon(job.titleId, job.metaDir, event.iconTga);
+        bool hasIcon = false;
+        auto cachedIcon = cachedIcons.find(job.titleId);
+        if (cachedIcon != cachedIcons.end()) {
+            //! checked against the real file in the background (pass 3)
+            event.iconTga      = cachedIcon->second;
+            hasIcon            = true;
+            iconFromCache[next] = true;
+            iconCacheHits++;
+        } else {
+            hasIcon = readTitleIcon(job.titleId, job.metaDir, event.iconTga);
+            if (hasIcon) {
+                freshIcons[job.titleId] = event.iconTga;
+            }
+        }
         iconTicks += OSGetTime() - t1;
         if (hasIcon) {
             iconsOk++;
@@ -543,9 +622,22 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
         }
     }
 
-    DEBUG_FUNCTION_LINE("Icons done: %d titles in %lld ms (names %lld ms, icons %lld ms), %u icons, %u cached names", (int) jobs.size(),
+    DEBUG_FUNCTION_LINE("Icons done: %d titles in %lld ms (names %lld ms, icons %lld ms), %u icons (%u from the cache), %u cached names", (int) jobs.size(),
                         OSTicksToMilliseconds(OSGetTime() - start), OSTicksToMilliseconds(nameTicks),
-                        OSTicksToMilliseconds(iconTicks), iconsOk, cached);
+                        OSTicksToMilliseconds(iconTicks), iconsOk, iconCacheHits, cached);
+
+    //! first run or new titles: save right away, so the next boot is fast even if a game is
+    //! launched before the background checks below are done
+    if (iconCacheHits < iconsOk) {
+        //! (pass 3 replaces these copies with the real files)
+        for (size_t i = 0; i < jobs.size(); i++) {
+            auto it = cachedIcons.find(jobs[i].titleId);
+            if (iconFromCache[i] && it != cachedIcons.end()) {
+                freshIcons[jobs[i].titleId] = it->second;
+            }
+        }
+        saveIconCache(freshIcons);
+    }
 
     //! Pass 2: in the background, check the cached names (updates, console language change)
     for (auto &job : jobs) {
@@ -577,6 +669,33 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     //! also rewrite when titles were removed
     if (cacheChanged || freshNames.size() != jobs.size()) {
         saveNameCache(freshNames);
+    }
+
+    //! Pass 3: in the background, compare the cached icons with the real files (a title or
+    //! homebrew update can change its icon). A changed icon shows up on the next start.
+    bool iconsChanged = cachedIcons.size() != (size_t) iconCacheHits;
+    for (size_t i = 0; i < jobs.size(); i++) {
+        if (!iconFromCache[i]) {
+            continue;
+        }
+        if (!waitWhilePaused()) {
+            DEBUG_FUNCTION_LINE("Stop async icon check");
+            return;
+        }
+        std::vector<uint8_t> tga;
+        if (!readTitleIcon(jobs[i].titleId, jobs[i].metaDir, tga)) {
+            iconsChanged = true; // icon is gone, drop it from the cache
+            continue;
+        }
+        if (tga != cachedIcons[jobs[i].titleId]) {
+            DEBUG_FUNCTION_LINE("%016llX: icon changed", jobs[i].titleId);
+            iconsChanged = true;
+        }
+        freshIcons[jobs[i].titleId] = std::move(tga);
+    }
+    DEBUG_FUNCTION_LINE("Icons checked after %lld ms", OSTicksToMilliseconds(OSGetTime() - start));
+    if (iconsChanged) {
+        saveIconCache(freshIcons);
     }
 }
 
