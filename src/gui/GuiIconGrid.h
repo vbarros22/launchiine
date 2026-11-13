@@ -119,6 +119,7 @@ private:
     GuiSound *buttonClickSound;
 
     GuiText gameTitle;
+    GuiText updateNotice; // "Update available" under the selected title
     GuiTrigger touchTrigger;
     GuiTrigger wpadTouchTrigger;
     GuiTrigger leftTrigger;
@@ -196,6 +197,9 @@ private:
             if (image != nullptr) {
                 AsyncExecutor::pushForDelete(image);
             }
+            if (badge != nullptr) {
+                AsyncExecutor::pushForDelete(badge);
+            }
         }
 
         void updateImageData() {
@@ -207,7 +211,15 @@ private:
         GameIcon *image;
         gameInfo *info;
         GuiButton *button;
+        GuiImage *badge = nullptr; // "update available", drawn as the button icon
     };
+
+    //! shows or hides the update badge of a title, render thread
+    void setUpdateBadge(GameInfoContainer *container, bool show);
+
+    GuiImageData *updateBadgeData = nullptr;
+    uint32_t updatesSeen = 0;
+    bool noticeShown     = false;
 
     std::recursive_mutex positionMutex;
     std::recursive_mutex containerMutex;

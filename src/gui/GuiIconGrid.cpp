@@ -18,6 +18,7 @@
 #include "common/common.h"
 #include "gui/GameIcon.h"
 #include "game/Folders.h"
+#include "game/Updates.h"
 #include "utils/logger.h"
 #include <algorithm>
 #include <coreinit/cache.h>
@@ -28,7 +29,7 @@
 
 GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByName)
     : GuiTitleBrowser(w, h, GameIndex),
-      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(1.0f)),
+      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(1.0f)), updateNotice((char *) nullptr, 26, glm::vec4(1.0f, 0.75f, 0.3f, 1.0f)),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
       leftTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_LEFT | GuiTrigger::STICK_L_LEFT, true),
@@ -121,6 +122,11 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     gameTitle.setBlurGlowColor(5.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
     setTitleText("");
     append(&gameTitle);
+
+    updateBadgeData = Resources::GetImageData("updateBadge.png");
+    updateNotice.setPosition(0, -272);
+    updateNotice.setText("");
+    append(&updateNotice);
 }
 
 GuiIconGrid::~GuiIconGrid() {
@@ -151,6 +157,8 @@ GuiIconGrid::~GuiIconGrid() {
         delete x.second;
     }
     folderImages.clear();
+
+    Resources::RemoveImageData(updateBadgeData);
 }
 
 void GuiIconGrid::setupFolders() {
@@ -890,6 +898,7 @@ void GuiIconGrid::OnGameTitleAdded(gameInfo *info) {
     button->pointedOff.connect(this, &GuiIconGrid::OnGameButtonPointedOff);
 
     GameInfoContainer *container = new GameInfoContainer(button, image, info);
+    setUpdateBadge(container, Updates::hasUpdate(info->titleId));
     containerMutex.lock();
     gameInfoContainers[info->titleId] = container;
     containerMutex.unlock();
@@ -901,6 +910,22 @@ void GuiIconGrid::OnGameTitleAdded(gameInfo *info) {
 
     bResort          = true;
     bUpdatePositions = true;
+}
+
+void GuiIconGrid::setUpdateBadge(GameInfoContainer *container, bool show) {
+    if (container == nullptr || container->button == nullptr || updateBadgeData == nullptr) {
+        return;
+    }
+    if (show && container->badge == nullptr) {
+        container->badge = new GuiImage(updateBadgeData);
+        container->badge->setAlignment(ALIGN_RIGHT | ALIGN_TOP);
+        container->badge->setPosition(10, 10);
+        container->button->setIcon(container->badge);
+    } else if (!show && container->badge != nullptr) {
+        container->button->setIcon(nullptr);
+        AsyncExecutor::pushForDelete(container->badge);
+        container->badge = nullptr;
+    }
 }
 
 void GuiIconGrid::OnGameTitleUpdated(gameInfo *info) {
@@ -969,6 +994,22 @@ void GuiIconGrid::process() {
         folderTintAlpha = std::max(tintTarget, folderTintAlpha - 0.035f);
     }
     folderTint.setAlpha(folderTintAlpha);
+
+    //! game update notice: badges when the result of the check changes, text for the selection
+    uint32_t updates = Updates::generation();
+    if (updates != updatesSeen) {
+        updatesSeen = updates;
+        containerMutex.lock();
+        for (auto const &x : gameInfoContainers) {
+            setUpdateBadge(x.second, Updates::hasUpdate(x.first));
+        }
+        containerMutex.unlock();
+    }
+    bool showNotice = Updates::hasUpdate(selectedGame);
+    if (showNotice != noticeShown) {
+        noticeShown = showNotice;
+        updateNotice.setText(showNotice ? "Update available" : "");
+    }
 
     GuiFrame::process();
 }

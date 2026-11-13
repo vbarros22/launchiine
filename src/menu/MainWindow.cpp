@@ -26,6 +26,7 @@
 #include "fs/FSUtils.h"
 #include "utils/AsyncExecutor.h"
 #include "game/Folders.h"
+#include "game/Updates.h"
 #include <coreinit/title.h>
 #include <cinttypes>
 #include <cstdio>
@@ -49,6 +50,7 @@ MainWindow::MainWindow(int32_t w, int32_t h)
     gameList.titleAdded.connect(this, &MainWindow::OnGameTitleAdded);
     //! own thread (not the AsyncExecutor) so we can stop and join it before launching a title
     titleLoader = std::async(std::launch::async, [this] { gameList.load(startTitle); });
+    Updates::start();
 
     setupUserButton();
     //! like the Wii U Menu: no default user, ask who is playing (once per boot)
@@ -185,6 +187,7 @@ void MainWindow::saveLastTitle(uint64_t titleId) {
 
 void MainWindow::stopTitleLoader() {
     gameList.stopLoading();
+    Updates::stop();
     if (titleLoader.valid()) {
         DEBUG_FUNCTION_LINE("Waiting for the title loader to stop");
         titleLoader.wait();
