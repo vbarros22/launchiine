@@ -17,9 +17,6 @@
 #include <string>
 #include <vector>
 
-//! not declared in this wut version; the Wii U Menu uses client certificate 3 for tagaya
-extern "C" NSSLError NSSLSetClientPKI(NSSLContextHandle context, int32_t clientPki);
-
 namespace {
     constexpr const char *SETTINGS_DIR = "fs:/vol/external01/wiiu/launchiine";
     constexpr const char *CACHE_FILE   = "fs:/vol/external01/wiiu/launchiine/updates.txt";
@@ -143,7 +140,12 @@ namespace {
                 DEBUG_FUNCTION_LINE_VERBOSE("Update for %08X: v%u installed, v%u available", lower, installedV, latest->second);
             }
         }
-        DEBUG_FUNCTION_LINE("%d games have an update", (int) found.size());
+        int listed = 0;
+        for (auto const &x : installed.updateVersion) {
+            listed += cache.latest.count(x.first);
+        }
+        //! tells whether the version list covers everything or only part of the titles
+        DEBUG_FUNCTION_LINE("%d games have an update (%d of %d installed updates are in the list)", (int) found.size(), listed, (int) installed.updateVersion.size());
         {
             std::lock_guard<std::mutex> guard(resultLock);
             withUpdate.swap(found);
@@ -250,10 +252,6 @@ namespace {
         } else {
             for (int32_t ca = NSSL_SERVER_CERT_GROUP_NINTENDO_FIRST; ca <= NSSL_SERVER_CERT_GROUP_NINTENDO_LAST; ca++) {
                 NSSLAddServerPKI(ssl, (NSSLServerCertId) ca);
-            }
-            NSSLError certRes = NSSLSetClientPKI(ssl, 3);
-            if (certRes != NSSL_ERROR_OK) {
-                DEBUG_FUNCTION_LINE("NSSLSetClientPKI failed: %08X", certRes);
             }
 
             //! the country part does not change the versions, "NN" is what Cemu uses
