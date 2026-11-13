@@ -1124,11 +1124,12 @@ void GuiIconGrid::draw(CVideo *pVideo) {
     //! the BG needs to be rendered to stencil
     pVideo->setStencilRender(true);
     particleBgImage.draw(pVideo);
-    pVideo->setStencilRender(false);
-
+    //! drawn with the BG, where depth writes are off; with depth on this full screen
+    //! quad would hide every icon behind it
     if (folderTintAlpha > 0.0f) {
         folderTint.draw(pVideo);
     }
+    pVideo->setStencilRender(false);
 
     containerMutex.lock();
     positionMutex.lock();
