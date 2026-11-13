@@ -29,7 +29,7 @@
 
 GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByName)
     : GuiTitleBrowser(w, h, GameIndex),
-      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(1.0f)), updateNotice((char *) nullptr, 26, glm::vec4(1.0f, 0.75f, 0.3f, 1.0f)),
+      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(0.22f, 0.24f, 0.26f, 1.0f)), updateNotice((char *) nullptr, 26, glm::vec4(0.9f, 0.45f, 0.0f, 1.0f)),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
       leftTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_LEFT | GuiTrigger::STICK_L_LEFT, true),
@@ -45,7 +45,14 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
       noIcon(Resources::GetFile("noGameIcon.png"), Resources::GetFileSize("noGameIcon.png"), GX2_TEX_CLAMP_MODE_MIRROR),
       emptyIcon(Resources::GetFile("iconEmpty.png"), Resources::GetFileSize("iconEmpty.png"), GX2_TEX_CLAMP_MODE_MIRROR) {
 
+    //! light background, stored at half size
+    backgroundData  = Resources::GetImageData("background.png");
+    backgroundImage = new GuiImage(backgroundData);
+    backgroundImage->setScaleX((float) w / backgroundImage->getWidth());
+    backgroundImage->setScaleY((float) h / backgroundImage->getHeight());
+    backgroundImage->setParent(this);
     particleBgImage.setParent(this);
+    particleBgImage.setAlpha(0.5f);
     folderTint.setParent(this);
     folderTint.setAlpha(0.0f);
     //! GameIndex is the title id to select once the list is loaded
@@ -119,7 +126,6 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
     }
 
     gameTitle.setPosition(0, -320);
-    gameTitle.setBlurGlowColor(5.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
     setTitleText("");
     append(&gameTitle);
 
@@ -159,6 +165,8 @@ GuiIconGrid::~GuiIconGrid() {
     folderImages.clear();
 
     Resources::RemoveImageData(updateBadgeData);
+    delete backgroundImage;
+    Resources::RemoveImageData(backgroundData);
 }
 
 void GuiIconGrid::setupFolders() {
@@ -1164,6 +1172,7 @@ void GuiIconGrid::updateButtonPositions() {
 void GuiIconGrid::draw(CVideo *pVideo) {
     //! the BG needs to be rendered to stencil
     pVideo->setStencilRender(true);
+    backgroundImage->draw(pVideo);
     particleBgImage.draw(pVideo);
     //! drawn with the BG, where depth writes are off; with depth on this full screen
     //! quad would hide every icon behind it

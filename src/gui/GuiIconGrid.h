@@ -110,6 +110,8 @@ private:
     static const int32_t MAX_ROWS = 3;
     static const int32_t MAX_COLS = 5;
 
+    GuiImageData *backgroundData = nullptr;
+    GuiImage *backgroundImage    = nullptr;
     GuiParticleImage particleBgImage;
     //! translucent wash in the open folder's color, like the Wii U Menu
     GuiImage folderTint;

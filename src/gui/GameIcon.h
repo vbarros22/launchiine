@@ -59,6 +59,8 @@ public:
     bool checkRayIntersection(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirFrac);
 
 private:
+    static void loadTheme();
+
     enum eRenderState {
         RENDER_REFLECTION,
         RENDER_NORMAL

@@ -1,6 +1,7 @@
 #include "GameIcon.h"
 #include "Application.h"
 #include "GameIconModel.h"
+#include "resources/Resources.h"
 #include "utils/logger.h"
 #include "utils/utils.h"
 #include <gui/video/CVideo.h>
@@ -12,6 +13,7 @@ static const float cfIconMirrorAlpha = 0.45f;
 
 GameIcon::GameIcon(GuiImageData *preloadImage)
     : GuiImage(preloadImage) {
+    loadTheme();
     bSelected                        = false;
     bRenderStroke                    = true;
     bRenderReflection                = false;
@@ -154,144 +156,81 @@ bool GameIcon::checkRayIntersection(const glm::vec3 &rayOrigin, const glm::vec3 
     return true;
 }
 
+namespace {
+    //! Light theme tile, shared by every icon. The textures are 256 px and the icon model
+    //! (about +-0.93) covers the middle ~164 px, so the quad is the icon scaled by this:
+    constexpr float cfTileScale = 1.45f;
+    GuiImageData *tileData            = nullptr;
+    GuiImageData *tileSelectedData    = nullptr;
+    GuiImageData *tileSelectedOverlay = nullptr;
+
+    void drawQuad(GuiImageData *data, const glm::mat4 &projectionMtx, const glm::mat4 &viewMtx, const glm::mat4 &view,
+                  const glm::vec4 &color, const glm::vec4 &alphaFadeOut) {
+        if (data == nullptr || data->getTexture() == nullptr) {
+            return;
+        }
+        Shader3D::instance()->setShaders();
+        Shader3D::instance()->setProjectionMtx(projectionMtx);
+        Shader3D::instance()->setViewMtx(viewMtx);
+        Shader3D::instance()->setTextureAndSampler(data->getTexture(), data->getSampler());
+        Shader3D::instance()->setAlphaFadeOut(alphaFadeOut);
+        Shader3D::instance()->setDistanceFadeOut(0.0f);
+        Shader3D::instance()->setModelViewMtx(view);
+        Shader3D::instance()->setColorIntensity(color);
+        Shader3D::instance()->setAttributeBuffer(); // default quad
+        Shader3D::instance()->draw(GX2_PRIMITIVE_MODE_QUADS, 4);
+    }
+} // namespace
+
+void GameIcon::loadTheme() {
+    //! render thread (GameIcons are created there); kept for the whole run
+    if (tileData == nullptr) {
+        tileData            = Resources::GetImageData("tile.png");
+        tileSelectedData    = Resources::GetImageData("tileSelected.png");
+        tileSelectedOverlay = Resources::GetImageData("tileSelectedOverlay.png");
+    }
+}
+
 void GameIcon::draw(CVideo *pVideo, const glm::mat4 &projectionMtx, const glm::mat4 &viewMtx, const glm::mat4 &modelView) {
     if (imageData == nullptr) {
         return;
     }
-    //! first setup 2D GUI positions
-    float currPosX     = getCenterX() * pVideo->getWidthScaleFactor() * 2.0f;
-    float currPosY     = getCenterY() * pVideo->getHeightScaleFactor() * 2.0f;
-    float currPosZ     = getDepth() * pVideo->getDepthScaleFactor() * 2.0f;
-    float currScaleX   = getScaleX() * (float) getWidth() * pVideo->getWidthScaleFactor();
-    float currScaleY   = getScaleY() * (float) getHeight() * pVideo->getHeightScaleFactor();
-    float currScaleZ   = getScaleZ() * (float) getWidth() * pVideo->getDepthScaleFactor();
-    float strokeScaleX = pVideo->getWidthScaleFactor() * strokeWidth * 0.25f + cfIconMirrorScale;
-    float strokeScaleY = pVideo->getHeightScaleFactor() * strokeWidth * 0.25f + cfIconMirrorScale;
+    float currPosX   = getCenterX() * pVideo->getWidthScaleFactor() * 2.0f;
+    float currPosY   = getCenterY() * pVideo->getHeightScaleFactor() * 2.0f;
+    float currPosZ   = getDepth() * pVideo->getDepthScaleFactor() * 2.0f;
+    float currScaleX = getScaleX() * (float) getWidth() * pVideo->getWidthScaleFactor();
+    float currScaleY = getScaleY() * (float) getHeight() * pVideo->getHeightScaleFactor();
+    float currScaleZ = getScaleZ() * (float) getWidth() * pVideo->getDepthScaleFactor();
 
-    for (int32_t iDraw = 0; iDraw < 2; iDraw++) {
-        glm::vec4 *alphaFadeOut;
-        glm::mat4 m_iconView;
-        glm::mat4 m_mirrorView;
-        glm::mat4 m_strokeView;
+    glm::mat4 iconView = glm::translate(modelView, glm::vec3(currPosX, currPosY, currPosZ));
+    iconView           = glm::rotate(iconView, DegToRad(rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::mat4 tileView = glm::scale(iconView, glm::vec3(currScaleX * cfTileScale, currScaleY * cfTileScale, 1.0f));
+    iconView           = glm::scale(iconView, glm::vec3(currScaleX, currScaleY, currScaleZ));
 
-        if (iDraw == RENDER_REFLECTION) {
-            //! Reflection render
-            if (!bRenderReflection)
-                continue;
-            m_iconView = glm::translate(modelView, glm::vec3(currPosX, -currScaleY * 2.0f - currPosY, currPosZ + cosf(DegToRad(rotationX)) * currScaleZ * 2.0f));
-            m_iconView = glm::rotate(m_iconView, DegToRad(rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
-            m_iconView = glm::scale(m_iconView, glm::vec3(currScaleX, -currScaleY, currScaleZ));
+    colorIntensity[3] = getAlpha();
+    glm::vec4 tileColor(1.0f, 1.0f, 1.0f, getAlpha());
 
-            colorIntensity[3]                   = reflectionAlpha * getAlpha();
-            selectionBlurOuterColorIntensity[3] = colorIntensity[3] * 0.7f;
-            selectionBlurInnerColorIntensity[3] = colorIntensity[3] * 0.7f;
-            alphaFadeOut                        = &alphaFadeOutRefl;
+    //! 1. the glass tile behind the icon, without depth writes so it never hides an icon
+    GX2SetDepthOnlyControl(GX2_ENABLE, GX2_DISABLE, GX2_COMPARE_FUNC_LEQUAL);
+    drawQuad(bSelected ? tileSelectedData : tileData, projectionMtx, viewMtx, tileView, tileColor, alphaFadeOutNorm);
+    GX2SetDepthOnlyControl(GX2_ENABLE, GX2_ENABLE, GX2_COMPARE_FUNC_LEQUAL);
 
-            GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, GX2_ENABLE, GX2_DISABLE);
-        } else {
-            //! Normal render
-            m_iconView = glm::translate(modelView, glm::vec3(currPosX, currPosY, currPosZ));
-            m_iconView = glm::rotate(m_iconView, DegToRad(rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
-            m_iconView = glm::scale(m_iconView, glm::vec3(currScaleX, currScaleY, currScaleZ));
+    //! 2. the icon
+    Shader3D::instance()->setShaders();
+    Shader3D::instance()->setProjectionMtx(projectionMtx);
+    Shader3D::instance()->setViewMtx(viewMtx);
+    Shader3D::instance()->setTextureAndSampler(imageData->getTexture(), imageData->getSampler());
+    Shader3D::instance()->setAlphaFadeOut(alphaFadeOutNorm);
+    Shader3D::instance()->setDistanceFadeOut(distanceFadeout);
+    Shader3D::instance()->setModelViewMtx(iconView);
+    Shader3D::instance()->setColorIntensity(colorIntensity);
+    Shader3D::instance()->setAttributeBuffer(vtxCount, posVtxs, texCoords);
+    Shader3D::instance()->draw(GX2_PRIMITIVE_MODE_QUADS, vtxCount);
 
-            colorIntensity[3]                   = getAlpha();
-            selectionBlurOuterColorIntensity[3] = colorIntensity[3];
-            selectionBlurInnerColorIntensity[3] = colorIntensity[3];
-            alphaFadeOut                        = &alphaFadeOutNorm;
-        }
-
-        m_mirrorView = glm::scale(m_iconView, glm::vec3(cfIconMirrorScale, cfIconMirrorScale, cfIconMirrorScale));
-
-        colorIntensityMirror[3] = cfIconMirrorAlpha * colorIntensity[3];
-
-        if (!bIconLast) {
-            Shader3D::instance()->setShaders();
-            Shader3D::instance()->setProjectionMtx(projectionMtx);
-            Shader3D::instance()->setViewMtx(viewMtx);
-            Shader3D::instance()->setTextureAndSampler(imageData->getTexture(), imageData->getSampler());
-            Shader3D::instance()->setAlphaFadeOut(*alphaFadeOut);
-            Shader3D::instance()->setDistanceFadeOut(distanceFadeout);
-
-            //! render the real symbol
-            Shader3D::instance()->setModelViewMtx(m_iconView);
-            Shader3D::instance()->setColorIntensity(colorIntensity);
-            Shader3D::instance()->setAttributeBuffer(vtxCount, posVtxs, texCoords);
-            Shader3D::instance()->draw(GX2_PRIMITIVE_MODE_QUADS, vtxCount);
-        }
-
-
-        if (bSelected) {
-            strokeFractalEnable = 0;
-
-            GX2SetDepthOnlyControl(GX2_ENABLE, GX2_DISABLE, GX2_COMPARE_FUNC_LEQUAL);
-            m_strokeView = glm::scale(m_iconView, glm::vec3(selectionBlurOuterSize, selectionBlurOuterSize, 0.0f));
-            ShaderFractalColor::instance()->setShaders();
-            ShaderFractalColor::instance()->setProjectionMtx(projectionMtx);
-            ShaderFractalColor::instance()->setViewMtx(viewMtx);
-            ShaderFractalColor::instance()->setModelViewMtx(m_strokeView);
-            ShaderFractalColor::instance()->setFractalColor(strokeFractalEnable);
-            ShaderFractalColor::instance()->setBlurBorder(selectionBlurOuterBorderSize);
-            ShaderFractalColor::instance()->setColorIntensity(selectionBlurOuterColorIntensity);
-            ShaderFractalColor::instance()->setAlphaFadeOut(*alphaFadeOut);
-            ShaderFractalColor::instance()->setAttributeBuffer();
-            ShaderFractalColor::instance()->draw();
-
-            m_strokeView = glm::scale(m_iconView, glm::vec3(selectionBlurInnerSize, selectionBlurInnerSize, 0.0f));
-            ShaderFractalColor::instance()->setBlurBorder(selectionBlurInnerBorderSize);
-            ShaderFractalColor::instance()->setColorIntensity(selectionBlurInnerColorIntensity);
-            ShaderFractalColor::instance()->draw();
-            GX2SetDepthOnlyControl(GX2_ENABLE, GX2_ENABLE, GX2_COMPARE_FUNC_LEQUAL);
-        }
-
-        if (iDraw == RENDER_NORMAL && bRenderStroke) {
-            strokeFractalEnable = 1;
-            //! now render the icon stroke
-            //! make the stroke a little bigger than the mirror, just by the line width on each side
-            m_strokeView = glm::scale(m_iconView, glm::vec3(strokeScaleX, strokeScaleY, cfIconMirrorScale));
-
-            ShaderFractalColor::instance()->setShaders();
-            ShaderFractalColor::instance()->setLineWidth(strokeWidth);
-            ShaderFractalColor::instance()->setProjectionMtx(projectionMtx);
-            ShaderFractalColor::instance()->setViewMtx(viewMtx);
-            ShaderFractalColor::instance()->setModelViewMtx(m_strokeView);
-            ShaderFractalColor::instance()->setFractalColor(strokeFractalEnable);
-            ShaderFractalColor::instance()->setBlurBorder(strokeBlurBorder);
-            ShaderFractalColor::instance()->setColorIntensity(colorIntensity);
-            ShaderFractalColor::instance()->setAlphaFadeOut(*alphaFadeOut);
-            ShaderFractalColor::instance()->setAttributeBuffer(cuGameIconStrokeVtxCount, strokePosVtxs, strokeTexCoords, strokeColorVtxs);
-            ShaderFractalColor::instance()->draw(GX2_PRIMITIVE_MODE_LINE_STRIP, cuGameIconStrokeVtxCount);
-        }
-
-        //! render the background mirror frame
-        Shader3D::instance()->setShaders();
-        Shader3D::instance()->setProjectionMtx(projectionMtx);
-        Shader3D::instance()->setViewMtx(viewMtx);
-        Shader3D::instance()->setTextureAndSampler(imageData->getTexture(), imageData->getSampler());
-        Shader3D::instance()->setAlphaFadeOut(*alphaFadeOut);
-        Shader3D::instance()->setDistanceFadeOut(distanceFadeout);
-        Shader3D::instance()->setModelViewMtx(m_mirrorView);
-        Shader3D::instance()->setColorIntensity(colorIntensityMirror);
-        Shader3D::instance()->setAttributeBuffer(vtxCount, posVtxs, texCoordsMirror);
-        Shader3D::instance()->draw(GX2_PRIMITIVE_MODE_QUADS, vtxCount);
-
-        if (bIconLast) {
-            Shader3D::instance()->setShaders();
-            Shader3D::instance()->setProjectionMtx(projectionMtx);
-            Shader3D::instance()->setViewMtx(viewMtx);
-            Shader3D::instance()->setTextureAndSampler(imageData->getTexture(), imageData->getSampler());
-            Shader3D::instance()->setAlphaFadeOut(*alphaFadeOut);
-            Shader3D::instance()->setDistanceFadeOut(distanceFadeout);
-
-            //! render the real symbol
-            Shader3D::instance()->setModelViewMtx(m_iconView);
-            Shader3D::instance()->setColorIntensity(colorIntensity);
-            Shader3D::instance()->setAttributeBuffer(vtxCount, posVtxs, texCoords);
-            Shader3D::instance()->draw(GX2_PRIMITIVE_MODE_QUADS, vtxCount);
-        }
-
-        //! return back normal culling
-        if (iDraw == RENDER_REFLECTION) {
-            GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, GX2_DISABLE, GX2_ENABLE);
-        }
+    //! 3. selection: corner brackets and the "Start" band on top of the icon
+    if (bSelected) {
+        GX2SetDepthOnlyControl(GX2_DISABLE, GX2_DISABLE, GX2_COMPARE_FUNC_ALWAYS);
+        drawQuad(tileSelectedOverlay, projectionMtx, viewMtx, tileView, tileColor, alphaFadeOutNorm);
+        GX2SetDepthOnlyControl(GX2_ENABLE, GX2_ENABLE, GX2_COMPARE_FUNC_LEQUAL);
     }
 }
