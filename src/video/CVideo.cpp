@@ -114,8 +114,8 @@ CVideo::CVideo(int32_t forceTvScanMode, int32_t forceDrcScanMode) {
     int32_t drcAAMode = GX2_AA_MODE4X;
 
     //! calculate the scale factor for later texture resize
-    widthScaleFactor = 1.0f / (float) tvWidth;
-    heightScaleFactor = 1.0f / (float) tvHeight;
+    widthScaleFactor = 1.0f / cfLayoutWidth;
+    heightScaleFactor = 1.0f / cfLayoutHeight;
     depthScaleFactor = widthScaleFactor;
 
     //! calculate the size needed for the TV scan buffer and allocate the buffer from bucket memory
