@@ -3,7 +3,8 @@ name: Release
 # Run it from the Actions tab (Release -> Run workflow -> version, e.g. v0.2) or push a
 # tag like v0.2. It builds men.rpx, creates the tag if needed and publishes a release with
 # - men.rpx
-# - launchiine-<tag>.zip, laid out like the SD card (wiiu/environments/aroma/men.rpx)
+# - launchiine_helper.wps (brings launchiine back after opening the original Wii U Menu)
+# - launchiine-<tag>.zip, laid out like the SD card (wiiu/environments/aroma/men.rpx and plugins/)
 # The release text is taken from release-notes.md.
 on:
   push:
@@ -30,10 +31,15 @@ jobs:
         run: |
           docker build . -t builder
           docker run --rm -v ${PWD}:/project builder make
+      - name: Build the helper plugin
+        run: |
+          docker build helper_plugin -t plugin-builder
+          docker run --rm -v ${PWD}/helper_plugin:/project plugin-builder make
       - name: Package
         run: |
-          mkdir -p sd/wiiu/environments/aroma
+          mkdir -p sd/wiiu/environments/aroma/plugins
           cp men.rpx sd/wiiu/environments/aroma/men.rpx
+          cp helper_plugin/launchiine_helper.wps sd/wiiu/environments/aroma/plugins/
           (cd sd && zip -r ../launchiine-${TAG}.zip wiiu)
       - uses: softprops/action-gh-release@v2
         with:
@@ -44,4 +50,5 @@ jobs:
           prerelease: true
           files: |
             men.rpx
+            helper_plugin/launchiine_helper.wps
             launchiine-${{ env.TAG }}.zip

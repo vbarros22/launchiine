@@ -30,6 +30,8 @@
 #include <coreinit/title.h>
 #include <cinttypes>
 #include <cstdio>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <malloc.h>
 #include <future>
 #include <nn/acp/title.h>
@@ -591,6 +593,79 @@ void MainWindow::OnCloseEffectFinish(GuiElement *element) {
 }
 
 void MainWindow::OnSettingsButtonClicked(GuiElement *element) {
+    if (listMenu != nullptr || accountFrame != nullptr || launchInProgress || isKeyboardOpen() || pendingKeyboardFrames > 0) {
+        return;
+    }
+    menuKind = MenuKind::Settings;
+    openListMenu("launchiine", {"System Settings", "Original Wii U Menu"});
+}
+
+namespace {
+    constexpr const char *ENVIRONMENTS_DIR = "fs:/vol/external01/wiiu/environments";
+    constexpr const char *RESTORE_MARKER   = "fs:/vol/external01/wiiu/launchiine/restore-men.txt";
+    constexpr const char *HELPER_PLUGIN    = "launchiine_helper.wps";
+
+    bool fileExists(const std::string &path) {
+        struct stat st {};
+        return stat(path.c_str(), &st) == 0;
+    }
+
+    //! the environment launchiine runs from: aroma, or the only one with a men.rpx
+    std::string launchiineEnvironment() {
+        std::string aroma = std::string(ENVIRONMENTS_DIR) + "/aroma";
+        if (fileExists(aroma + "/men.rpx")) {
+            return aroma;
+        }
+        std::string found;
+        DIR *dir = opendir(ENVIRONMENTS_DIR);
+        if (dir != nullptr) {
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != nullptr) {
+                std::string path = std::string(ENVIRONMENTS_DIR) + "/" + entry->d_name;
+                if (entry->d_name[0] != '.' && fileExists(path + "/men.rpx")) {
+                    found = path;
+                    break;
+                }
+            }
+            closedir(dir);
+        }
+        return found;
+    }
+} // namespace
+
+void MainWindow::openOriginalMenu() {
+    std::string environment = launchiineEnvironment();
+    if (environment.empty()) {
+        refreshFolderViews({}, "men.rpx not found on the SD card");
+        return;
+    }
+    //! without the helper nothing would rename men.rpx back: the console would stay on the
+    //! original menu until the file is renamed on a PC
+    if (!fileExists(environment + "/plugins/" + HELPER_PLUGIN)) {
+        refreshFolderViews({}, std::string("Needs ") + HELPER_PLUGIN + " in the plugins folder (see README)");
+        return;
+    }
+    std::string men      = environment + "/men.rpx";
+    std::string disabled = environment + "/men.rpx.launchiine-off";
+    std::string marker   = disabled + "\n" + men + "\n";
+    FSUtils::CreateSubfolder("fs:/vol/external01/wiiu/launchiine");
+    if (FSUtils::saveBufferToFile(RESTORE_MARKER, (void *) marker.data(), marker.size()) != (int32_t) marker.size()) {
+        refreshFolderViews({}, "Could not write to the SD card");
+        return;
+    }
+    if (rename(men.c_str(), disabled.c_str()) != 0) {
+        remove(RESTORE_MARKER);
+        refreshFolderViews({}, "Could not rename men.rpx");
+        return;
+    }
+    DEBUG_FUNCTION_LINE("Starting the original Wii U Menu (%s renamed, the helper plugin restores it)", men.c_str());
+    launchInProgress = true;
+    gameList.setPaused(true);
+    stopTitleLoader();
+    SYSLaunchMenu();
+}
+
+void MainWindow::openSystemSettings() {
     //! _SYSLaunchSettings() blocks forever when called from the menu. Launch the System
     //! Settings title the same way as tapping its icon instead.
     uint64_t settingsTitleId = 0;
@@ -755,6 +830,13 @@ void MainWindow::OnListMenuChosen(ListMenuFrame *menu, int32_t index) {
             }
             break;
         }
+        case MenuKind::Settings:
+            if (index == 0) {
+                openSystemSettings();
+            } else if (index == 1) {
+                openOriginalMenu();
+            }
+            break;
         case MenuKind::FolderColor: {
             auto &choices = Folders::colorChoices();
             if (index < 0 || index >= (int32_t) choices.size()) {

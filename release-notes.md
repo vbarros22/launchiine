@@ -2,7 +2,7 @@
 Nothing is written to the NAND: deleting `men.rpx` from the SD card brings back the original Wii U Menu.
 
 ### Installation
-Extract the `launchiine-*.zip` of this release to the root of the SD card (or copy `men.rpx` to `sd:/wiiu/environments/aroma/men.rpx`) and start the console as usual.
+Extract the `launchiine-*.zip` of this release to the root of the SD card (or copy `men.rpx` to `sd:/wiiu/environments/aroma/men.rpx` and `launchiine_helper.wps` to `sd:/wiiu/environments/aroma/plugins/`) and start the console as usual.
 
 ### New in v0.3
 **Wii U Menu look** (all graphics are new drawings, no Nintendo files are included)
@@ -20,11 +20,11 @@ Extract the `launchiine-*.zip` of this release to the root of the SD card (or co
 - **Game update notice:** launchiine checks Nintendo's version list (like the Wii U Menu does) and marks titles with a newer update with an orange badge and *Update available*. It only tells; updating still happens through the original menu / System Settings.
 - **Icon cache:** icons are cached on the SD card, the menu shows all icons in a fraction of a second after the first start.
 - Touch: tap an icon to select it, tap the selected icon to open it.
+- **Original Wii U Menu:** ZL (or the settings tab) → *Original Wii U Menu* starts Nintendo's menu once; the included `launchiine_helper.wps` plugin brings launchiine back for the next start.
 
 ### Known limitations
 - No splash screen sound, no menu music from the original menu.
 - No Wara Wara Plaza; the TV mirrors the grid.
-- No shortcut to the original Wii U Menu yet (delete `men.rpx` instead).
 - Updates are only announced, not downloaded.
 - Quick Start Menu and external storage handling rely on Aroma's AutobootModule.
 

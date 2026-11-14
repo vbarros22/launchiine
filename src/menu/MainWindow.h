@@ -193,6 +193,9 @@ private:
     void openTextKeyboard(int32_t maxTextLength);
 
     void OnSettingsButtonClicked(GuiElement *element);
+    void openSystemSettings();
+    //! starts the original Wii U Menu once (needs the launchiine helper plugin to come back)
+    void openOriginalMenu();
 
     void OnLayoutSwitchClicked(GuiElement *element);
 
@@ -231,7 +234,7 @@ private:
 
     AccountSelectFrame *accountFrame = nullptr;
 
-    enum class MenuKind { None, MoveTitle, FolderOptions, FolderColor, ConfirmDelete };
+    enum class MenuKind { None, MoveTitle, FolderOptions, FolderColor, ConfirmDelete, Settings };
     enum class KeyboardPurpose { Search, NewFolder, RenameFolder };
     //! special destination in the "Move to" menu
     static constexpr uint64_t NEW_FOLDER = 1;

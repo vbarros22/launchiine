@@ -36,11 +36,15 @@ The original was published as an unfinished work in progress; this fork picks it
 - **Fast start:** names and icons are cached on the SD card; the menu is complete in well under a second.
 - The menu opens on the last started title (inside its folder if needed).
 - Names follow the console language.
-- ZL opens System Settings.
+- ZL (or the settings tab) opens a small menu: System Settings or the **original Wii U Menu**.
+  The original menu needs the included `launchiine_helper.wps` plugin (in `wiiu/environments/aroma/plugins/`):
+  launchiine steps aside for one start of the menu and the plugin brings it back right after,
+  so the next time the menu starts it is launchiine again.
 
 ### Installation
 1. Download the latest release from the [Releases page](https://github.com/vbarros22/launchiine/releases).
-2. Extract `launchiine-<version>.zip` to the root of the SD card, or copy `men.rpx` to `sd:/wiiu/environments/aroma/men.rpx`.
+2. Extract `launchiine-<version>.zip` to the root of the SD card, or copy `men.rpx` to `sd:/wiiu/environments/aroma/men.rpx`
+   and `launchiine_helper.wps` to `sd:/wiiu/environments/aroma/plugins/`.
 3. Start the console as usual; launchiine shows up instead of the Wii U Menu.
 
 Development builds of every commit are available as the `men-rpx` artifact in the Actions tab.
@@ -57,7 +61,7 @@ To go back to the original menu, delete (or rename) `men.rpx`.
 | + | Search (empty search shows everything again) |
 | X (or tap the Mii) | Choose the user |
 | L / R | Previous / next page |
-| ZL | System Settings |
+| ZL | System Settings / original Wii U Menu |
 
 ### Files on the SD card
 Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
@@ -66,6 +70,7 @@ Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
 - `updates.txt` – latest update versions from the last check
 - `lastTitle.txt` – last started title
 - `folders.txt` – your folders, their colors and which titles were moved
+- `restore-men.txt` – only exists for a moment while the original Wii U Menu starts
 
 ### Known limitations
 - Account switching has only been tested with a single account.
@@ -73,7 +78,6 @@ Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
 - Quick Start Menu and external storage handling rely on Aroma's [AutobootModule](https://github.com/wiiu-env/AutobootModule).
 - No Wara Wara Plaza / TV view; the TV mirrors the grid.
 - No menu music or splash sound from the original menu.
-- There is no way to open the original Wii U Menu from launchiine yet (delete `men.rpx` instead).
 - Leaving System Settings or Wii titles reboots the system and Aroma has to load again; that takes a moment, like with the original menu.
 
 ### Reporting problems

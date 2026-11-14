@@ -8,3 +8,4 @@ launchiine.layout
 cmake-build-debug/
 .idea/
 CMakeLists.txt
+*.wps
