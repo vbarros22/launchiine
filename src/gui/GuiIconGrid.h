@@ -126,6 +126,7 @@ private:
     GuiText gameTitle;
     GuiText updateNotice; // "Update available" under the selected title
     GuiText bubbleText;   // name of the selected title, in the bubble
+    GuiText folderBarText; // inside a folder: its name (or a message) in the bottom bar
     GuiTrigger touchTrigger;
     GuiTrigger wpadTouchTrigger;
     GuiTrigger leftTrigger;
@@ -225,6 +226,25 @@ private:
         GuiButton *button;
         GuiImage *badge = nullptr; // "update available", drawn as the button icon
     };
+
+    //! inside a folder, like the Wii U Menu: name bar, wrench (folder settings) and back tab
+    GuiImageData *folderBarData    = nullptr;
+    GuiImageData *folderWrenchData = nullptr;
+    GuiImageData *folderBackData   = nullptr;
+    GuiImage *folderBarImage       = nullptr;
+    GuiImage *folderWrenchImage    = nullptr;
+    GuiImage *folderBackImage      = nullptr;
+    GuiButton *folderWrenchButton  = nullptr;
+    GuiButton *folderBackButton    = nullptr;
+    std::string messageText;
+    std::string folderBarShown;
+    bool folderBarVisible = true;
+    void OnFolderWrenchClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
+
+    //! folder names on the folder icons and the update badges; drawn on top of the icons
+    //! (2D elements behind the icons' depth would be hidden)
+    std::map<uint64_t, GuiText *> folderLabels;
+    void drawIconOverlays(CVideo *pVideo);
 
     //! name bubble above (top row: below) the selected icon, like the Wii U Menu
     void drawNameBubble(CVideo *pVideo);

@@ -647,12 +647,18 @@ void MainWindow::OnFolderMenuRequested(GuiTitleBrowser *element, uint64_t titleI
     menuNeighbor = element->neighborOf(titleId);
     menuDestinations.clear();
 
-    if (Folders::isUserFolder(titleId)) {
-        menuKind = MenuKind::FolderOptions;
-        openListMenu("Folder \"" + Folders::folderName(titleId) + "\"", {"Rename", "Delete folder"});
-        return;
-    }
     if (Folders::isFolder(titleId)) {
+        //! like the Wii U Menu's folder settings; the built-in folders only change color
+        menuKind = MenuKind::FolderOptions;
+        std::vector<std::string> labels = {"Change color"};
+        menuDestinations.push_back(FOLDER_ACTION_COLOR);
+        if (Folders::isUserFolder(titleId)) {
+            labels.emplace_back("Rename");
+            menuDestinations.push_back(FOLDER_ACTION_RENAME);
+            labels.emplace_back("Delete folder");
+            menuDestinations.push_back(FOLDER_ACTION_DELETE);
+        }
+        openListMenu("Folder settings: " + Folders::folderName(titleId), labels);
         return;
     }
 
@@ -727,8 +733,19 @@ void MainWindow::OnListMenuChosen(ListMenuFrame *menu, int32_t index) {
             }
             break;
         }
-        case MenuKind::FolderOptions:
-            if (index == 0) {
+        case MenuKind::FolderOptions: {
+            if (index < 0 || index >= (int32_t) menuDestinations.size()) {
+                return;
+            }
+            uint64_t action = menuDestinations[index];
+            if (action == FOLDER_ACTION_COLOR) {
+                menuKind = MenuKind::FolderColor;
+                std::vector<std::string> names;
+                for (auto &choice : Folders::colorChoices()) {
+                    names.emplace_back(choice.name);
+                }
+                openListMenu("Color of " + Folders::folderName(menuTarget), names);
+            } else if (action == FOLDER_ACTION_RENAME) {
                 keyboardPurpose          = KeyboardPurpose::RenameFolder;
                 pendingKeyboardMaxLength = 32;
                 pendingKeyboardFrames    = 10;
@@ -737,6 +754,16 @@ void MainWindow::OnListMenuChosen(ListMenuFrame *menu, int32_t index) {
                 openListMenu("Delete \"" + Folders::folderName(menuTarget) + "\"?", {"Delete (games go to the main grid)", "Cancel"});
             }
             break;
+        }
+        case MenuKind::FolderColor: {
+            auto &choices = Folders::colorChoices();
+            if (index < 0 || index >= (int32_t) choices.size()) {
+                return;
+            }
+            Folders::setFolderColor(menuTarget, choices[index].rgb);
+            refreshFolderViews({menuTarget}, "");
+            break;
+        }
         case MenuKind::ConfirmDelete:
             if (index == 0) {
                 std::string name = Folders::folderName(menuTarget);

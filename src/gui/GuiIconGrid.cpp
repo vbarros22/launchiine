@@ -21,6 +21,7 @@
 #include "game/Updates.h"
 #include "utils/logger.h"
 #include <algorithm>
+#include <set>
 #include <coreinit/cache.h>
 #include <gui/GuiController.h>
 #include <gui/GuiIconGrid.h>
@@ -29,7 +30,7 @@
 
 GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByName)
     : GuiTitleBrowser(w, h, GameIndex),
-      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(0.22f, 0.24f, 0.26f, 1.0f)), updateNotice((char *) nullptr, 26, glm::vec4(0.9f, 0.45f, 0.0f, 1.0f)), bubbleText((char *) nullptr, 34, glm::vec4(0.25f, 0.27f, 0.29f, 1.0f)),
+      particleBgImage(w, h, 50, 60.0f, 90.0f, 0.6f, 1.0f), folderTint(w, h, (GX2Color){0, 0, 0, 255}), buttonClickSound(Resources::GetSound("button_click.mp3")), gameTitle((char *) nullptr, 52, glm::vec4(0.22f, 0.24f, 0.26f, 1.0f)), updateNotice((char *) nullptr, 26, glm::vec4(0.9f, 0.45f, 0.0f, 1.0f)), bubbleText((char *) nullptr, 34, glm::vec4(0.25f, 0.27f, 0.29f, 1.0f)), folderBarText((char *) nullptr, 30, glm::vec4(0.25f, 0.27f, 0.29f, 1.0f)),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
       leftTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_LEFT | GuiTrigger::STICK_L_LEFT, true),
@@ -151,6 +152,40 @@ GuiIconGrid::GuiIconGrid(int32_t w, int32_t h, uint64_t GameIndex, bool sortByNa
         dot->setScale(1.0f / 1.5f);
     }
 
+    //! folder bar (textures 1.5x)
+    folderBarData     = Resources::GetImageData("folderBar.png");
+    folderWrenchData  = Resources::GetImageData("folderWrench.png");
+    folderBackData    = Resources::GetImageData("folderBack.png");
+    folderBarImage    = new GuiImage(folderBarData);
+    folderWrenchImage = new GuiImage(folderWrenchData);
+    folderBackImage   = new GuiImage(folderBackData);
+    for (auto *image : {folderBarImage, folderWrenchImage, folderBackImage}) {
+        image->setScale(1.0f / 1.5f);
+    }
+    constexpr float FOLDER_BAR_Y = -292.0f;
+    folderBarImage->setPosition(0, FOLDER_BAR_Y);
+    folderBarText.setPosition(0, FOLDER_BAR_Y);
+    folderBarText.setMaxWidth(540, GuiText::DOTTED);
+    append(folderBarImage);
+    append(&folderBarText);
+
+    folderWrenchButton = new GuiButton(folderWrenchImage->getWidth() / 1.5f, folderWrenchImage->getHeight() / 1.5f);
+    folderWrenchButton->setImage(folderWrenchImage);
+    folderWrenchButton->setPosition(360, FOLDER_BAR_Y);
+    folderWrenchButton->setTrigger(&touchTrigger);
+    folderWrenchButton->setTrigger(&wpadTouchTrigger);
+    folderWrenchButton->setEffectGrow();
+    folderWrenchButton->clicked.connect(this, &GuiIconGrid::OnFolderWrenchClick);
+    append(folderWrenchButton);
+
+    folderBackButton = new GuiButton(folderBackImage->getWidth() / 1.5f, folderBackImage->getHeight() / 1.5f);
+    folderBackButton->setImage(folderBackImage);
+    folderBackButton->setAlignment(ALIGN_LEFT | ALIGN_BOTTOM);
+    folderBackButton->setTrigger(&touchTrigger);
+    folderBackButton->setTrigger(&wpadTouchTrigger);
+    folderBackButton->clicked.connect(this, &GuiIconGrid::OnBackClick);
+    append(folderBackButton);
+
     bubbleText.setParent(this);
     bubbleText.setMaxWidth(700, GuiText::DOTTED);
 
@@ -200,6 +235,22 @@ GuiIconGrid::~GuiIconGrid() {
     for (auto *data : bubbleData) {
         Resources::RemoveImageData(data);
     }
+    remove(folderBarImage);
+    remove(&folderBarText);
+    remove(folderWrenchButton);
+    remove(folderBackButton);
+    delete folderWrenchButton;
+    delete folderBackButton;
+    delete folderBarImage;
+    delete folderWrenchImage;
+    delete folderBackImage;
+    Resources::RemoveImageData(folderBarData);
+    Resources::RemoveImageData(folderWrenchData);
+    Resources::RemoveImageData(folderBackData);
+    for (auto &x : folderLabels) {
+        delete x.second;
+    }
+    folderLabels.clear();
     delete pageDot;
     delete pageDotActive;
     Resources::RemoveImageData(pageDotData);
@@ -238,6 +289,11 @@ void GuiIconGrid::setupFolders() {
         if (currentFolder == it->first) {
             currentFolder = 0;
         }
+        auto label = folderLabels.find(it->first);
+        if (label != folderLabels.end()) {
+            AsyncExecutor::pushForDelete(label->second);
+            folderLabels.erase(label);
+        }
         delete it->second;
         it               = folderInfos.erase(it);
         bResort          = true;
@@ -263,8 +319,21 @@ void GuiIconGrid::setupFolders() {
         }
         info->imageData = image;
 
+        GuiText *&label = folderLabels[folder.id];
+        if (label == nullptr) {
+            label = new GuiText((char *) nullptr, 24, glm::vec4(1.0f));
+            label->setParent(this);
+            label->setMaxWidth(118, GuiText::DOTTED);
+            label->setBlurGlowColor(4.0f, glm::vec4(0.15f, 0.2f, 0.25f, 1.0f));
+        }
+        label->setText(folder.name.c_str());
+
         containerMutex.lock();
-        bool exists = gameInfoContainers.find(folder.id) != gameInfoContainers.end();
+        auto existing = gameInfoContainers.find(folder.id);
+        bool exists   = existing != gameInfoContainers.end();
+        if (exists && existing->second->image != nullptr) {
+            existing->second->image->setImageData(image); // the color may have changed
+        }
         containerMutex.unlock();
         if (!exists) {
             OnGameTitleAdded(info);
@@ -314,6 +383,7 @@ void GuiIconGrid::openFolder(uint64_t folder) {
 
 void GuiIconGrid::refreshFolders(const std::vector<uint64_t> &preferred) {
     setupFolders();
+    folderTintFor = 0; // pick up a changed folder color
     resortPositions();
     bResort = false;
 
@@ -354,11 +424,13 @@ void GuiIconGrid::OnFolderMenuClick(GuiButton *button, const GuiController *cont
     if (titleId == 0) {
         return;
     }
-    if (titleId == Folders::FOLDER_SYSTEM || titleId == Folders::FOLDER_HOMEBREW) {
-        setTitleText("Built-in folders can't be renamed or deleted");
-        return;
-    }
     folderMenuRequested(this, titleId);
+}
+
+void GuiIconGrid::OnFolderWrenchClick(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    if (currentFolder != 0) {
+        folderMenuRequested(this, currentFolder);
+    }
 }
 
 int32_t GuiIconGrid::offsetForTitleId(uint64_t titleId) {
@@ -466,6 +538,7 @@ void GuiIconGrid::setTitleText(const std::string &text) {
     constexpr int32_t MIN_SIZE  = 26;
 
     messageShown = !text.empty();
+    messageText  = text;
     gameTitle.setMaxWidth(0, GuiText::DOTTED); // measure without clamping
     gameTitle.setFontSize(MAX_SIZE);
     gameTitle.setText(text.c_str());
@@ -964,11 +1037,8 @@ void GuiIconGrid::setUpdateBadge(GameInfoContainer *container, bool show) {
     }
     if (show && container->badge == nullptr) {
         container->badge = new GuiImage(updateBadgeData);
-        container->badge->setAlignment(ALIGN_RIGHT | ALIGN_TOP);
-        container->badge->setPosition(10, 10);
-        container->button->setIcon(container->badge);
+        container->badge->setParent(this); // drawn in drawIconOverlays
     } else if (!show && container->badge != nullptr) {
-        container->button->setIcon(nullptr);
         AsyncExecutor::pushForDelete(container->badge);
         container->badge = nullptr;
     }
@@ -1047,8 +1117,27 @@ void GuiIconGrid::process() {
         }
         containerMutex.unlock();
     }
+    //! inside a folder the bottom bar replaces the message line
+    bool inFolder = currentFolder != 0;
+    if (inFolder != folderBarVisible) {
+        folderBarVisible = inFolder;
+        for (GuiElement *e : std::initializer_list<GuiElement *>{folderBarImage, &folderBarText, folderWrenchButton, folderBackButton}) {
+            e->setVisible(inFolder);
+        }
+        folderWrenchButton->setState(inFolder ? GuiElement::STATE_DEFAULT : GuiElement::STATE_DISABLED);
+        folderBackButton->setState(inFolder ? GuiElement::STATE_DEFAULT : GuiElement::STATE_DISABLED);
+        gameTitle.setVisible(!inFolder);
+    }
+    if (inFolder) {
+        std::string barText = messageShown ? messageText : Folders::folderName(currentFolder);
+        if (barText != folderBarShown) {
+            folderBarShown = barText;
+            folderBarText.setText(barText.c_str());
+        }
+    }
+
     //! same spot as the messages, which win
-    bool showNotice = Updates::hasUpdate(selectedGame) && !messageShown;
+    bool showNotice = Updates::hasUpdate(selectedGame) && !messageShown && !inFolder;
     if (showNotice != noticeShown) {
         noticeShown = showNotice;
         updateNotice.setText(showNotice ? "Update available" : "");
@@ -1190,10 +1279,44 @@ void GuiIconGrid::draw(CVideo *pVideo) {
     containerMutex.lock();
     positionMutex.lock();
     GuiFrame::draw(pVideo);
+    drawIconOverlays(pVideo);
     drawPageDots(pVideo);
     drawNameBubble(pVideo);
     positionMutex.unlock();
     containerMutex.unlock();
+}
+
+//! containerMutex and positionMutex are held
+void GuiIconGrid::drawIconOverlays(CVideo *pVideo) {
+    std::set<GuiButton *> onScreen;
+    for (auto *button : positionButtons) {
+        if (button != nullptr) {
+            onScreen.insert(button);
+        }
+    }
+    float reach = getWidth() * 0.5f + 100.0f;
+    GX2SetDepthOnlyControl(GX2_DISABLE, GX2_DISABLE, GX2_COMPARE_FUNC_ALWAYS);
+    for (auto const &x : gameInfoContainers) {
+        GameInfoContainer *container = x.second;
+        if (container->button == nullptr || onScreen.count(container->button) == 0) {
+            continue;
+        }
+        float cx = container->button->getCenterX();
+        float cy = container->button->getCenterY();
+        if (cx < -reach || cx > reach) {
+            continue;
+        }
+        auto label = folderLabels.find(x.first);
+        if (label != folderLabels.end()) {
+            label->second->setPosition(cx, cy);
+            label->second->draw(pVideo);
+        }
+        if (container->badge != nullptr) {
+            container->badge->setPosition(cx + 70.0f, cy + 70.0f);
+            container->badge->draw(pVideo);
+        }
+    }
+    GX2SetDepthOnlyControl(GX2_ENABLE, GX2_ENABLE, GX2_COMPARE_FUNC_LEQUAL);
 }
 
 //! page indicator at the top: one dot per page, the current one wider and cyan

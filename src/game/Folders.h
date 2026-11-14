@@ -60,6 +60,16 @@ namespace Folders {
     //! icon color (0xRRGGBB) of a folder
     uint32_t folderColor(uint64_t folder);
 
+    struct ColorChoice {
+        const char *name;
+        uint32_t rgb;
+    };
+    //! colors offered by "Change color"
+    const std::vector<ColorChoice> &colorChoices();
+
+    //! any folder, the built-in ones too
+    void setFolderColor(uint64_t folder, uint32_t rgb);
+
     //! 128x128 32 bit TGA of a folder in the given color (0xRRGGBB)
     std::vector<uint8_t> makeFolderIconTga(uint32_t rgb);
 } // namespace Folders

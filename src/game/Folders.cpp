@@ -16,6 +16,7 @@ namespace {
 
     bool sLoaded = false;
     std::vector<Folders::UserFolder> sUserFolders;
+    std::map<uint64_t, uint32_t> sColors; // folder -> 0xRRGGBB chosen by the user
     //! titles that are not in their natural folder: title id -> folder (0 = main grid)
     std::map<uint64_t, uint64_t> sMoved;
 
@@ -76,7 +77,7 @@ namespace {
             return;
         }
 
-        //! "folder\t<id>\t<name>" and "move\t<title id>\t<folder id>"
+        //! "folder\t<id>\t<name>", "move\t<title id>\t<folder id>" and "color\t<folder id>\t<rrggbb>"
         for (auto &line : splitLines(text)) {
             size_t tab1 = line.find('\t');
             size_t tab2 = tab1 == std::string::npos ? std::string::npos : line.find('\t', tab1 + 1);
@@ -90,6 +91,8 @@ namespace {
                 sUserFolders.push_back({a, rest});
             } else if (kind == "move" && a != 0) {
                 sMoved[a] = strtoull(rest.c_str(), nullptr, 16);
+            } else if (kind == "color" && Folders::isFolder(a)) {
+                sColors[a] = strtoul(rest.c_str(), nullptr, 16) & 0xFFFFFF;
             }
         }
         //! moves into folders that no longer exist go to the main grid
@@ -113,6 +116,10 @@ namespace {
         }
         for (auto &entry : sMoved) {
             snprintf(line, sizeof(line), "move\t%016llX\t%016llX\n", (unsigned long long) entry.first, (unsigned long long) entry.second);
+            text += line;
+        }
+        for (auto &entry : sColors) {
+            snprintf(line, sizeof(line), "color\t%016llX\t%06X\n", (unsigned long long) entry.first, (unsigned int) entry.second);
             text += line;
         }
         FSUtils::CreateSubfolder(SETTINGS_DIR);
@@ -203,6 +210,7 @@ void Folders::deleteFolder(uint64_t folder) {
         }
         ++it;
     }
+    sColors.erase(folder);
     DEBUG_FUNCTION_LINE("Deleted folder %016llX", folder);
     save();
 }
@@ -245,7 +253,26 @@ std::string Folders::folderName(uint64_t folder) {
     return "";
 }
 
+const std::vector<Folders::ColorChoice> &Folders::colorChoices() {
+    static const std::vector<ColorChoice> choices = {
+            {"Blue", 0x3A7BD5},   {"Light blue", 0x29B6F6}, {"Green", 0x4CAF50}, {"Yellow", 0xFDD835}, {"Orange", 0xE8892B},
+            {"Red", 0xE53935},    {"Pink", 0xEC6FA8},       {"Purple", 0xAB47BC}, {"Brown", 0x8D6E63}, {"Gray", 0x8A939C},
+    };
+    return choices;
+}
+
+void Folders::setFolderColor(uint64_t folder, uint32_t rgb) {
+    load();
+    sColors[folder] = rgb & 0xFFFFFF;
+    save();
+}
+
 uint32_t Folders::folderColor(uint64_t folder) {
+    load();
+    auto chosen = sColors.find(folder);
+    if (chosen != sColors.end()) {
+        return chosen->second;
+    }
     if (folder == FOLDER_SYSTEM) {
         return 0x3A7BD5;
     }
@@ -279,27 +306,31 @@ std::vector<uint8_t> Folders::makeFolderIconTga(uint32_t rgb) {
         return dx * dx + dy * dy <= radius * radius;
     };
 
+    //! Wii U Menu style: a light tile in the folder color with a 3x3 grid of small squares
+    auto mix = [](int c, int with, float t) { return (uint8_t) (c + (with - c) * t); };
+    constexpr int CELL = 34, GAP = 7, MARGIN = (SIZE - 3 * CELL - 2 * GAP) / 2;
     for (int y = 0; y < SIZE; y++) {
         for (int x = 0; x < SIZE; x++) {
             uint8_t *px = &tga[18 + (y * SIZE + x) * 4];
-            float shade = 0.0f;
-            bool filled = false;
-            if (inRounded(x, y, 16, 34, 112, 106, 8)) {
-                //! front, slightly lighter towards the top
-                shade  = 1.0f - 0.25f * (float) (y - 34) / 72.0f;
-                filled = true;
-            } else if (inRounded(x, y, 16, 20, 112, 50, 6) || inRounded(x, y, 16, 14, 58, 30, 5)) {
-                //! back panel and tab
-                shade  = 0.65f;
-                filled = true;
-            }
-            if (!filled) {
+            //! background: mostly white, a hint of the color
+            float bg = 0.82f;
+            px[0]    = mix(b, 255, bg);
+            px[1]    = mix(g, 255, bg);
+            px[2]    = mix(r, 255, bg);
+            px[3]    = 0xFF;
+            int cx = (x - MARGIN) / (CELL + GAP), cy = (y - MARGIN) / (CELL + GAP);
+            if (x < MARGIN || y < MARGIN || cx > 2 || cy > 2) {
                 continue;
             }
-            px[0] = (uint8_t) (b * shade);
-            px[1] = (uint8_t) (g * shade);
-            px[2] = (uint8_t) (r * shade);
-            px[3] = 0xFF;
+            int x0 = MARGIN + cx * (CELL + GAP), y0 = MARGIN + cy * (CELL + GAP);
+            if (!inRounded(x, y, x0, y0, x0 + CELL - 1, y0 + CELL - 1, 6)) {
+                continue;
+            }
+            //! squares: the color, lighter at the top
+            float light = 0.30f - 0.18f * (float) (y - y0) / CELL;
+            px[0]       = mix(b, 255, light);
+            px[1]       = mix(g, 255, light);
+            px[2]       = mix(r, 255, light);
         }
     }
     return tga;

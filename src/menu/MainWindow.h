@@ -231,10 +231,14 @@ private:
 
     AccountSelectFrame *accountFrame = nullptr;
 
-    enum class MenuKind { None, MoveTitle, FolderOptions, ConfirmDelete };
+    enum class MenuKind { None, MoveTitle, FolderOptions, FolderColor, ConfirmDelete };
     enum class KeyboardPurpose { Search, NewFolder, RenameFolder };
     //! special destination in the "Move to" menu
     static constexpr uint64_t NEW_FOLDER = 1;
+    //! actions of the folder settings menu (kept in menuDestinations)
+    static constexpr uint64_t FOLDER_ACTION_COLOR  = 1;
+    static constexpr uint64_t FOLDER_ACTION_RENAME = 2;
+    static constexpr uint64_t FOLDER_ACTION_DELETE = 3;
 
     ListMenuFrame *listMenu          = nullptr;
     MenuKind menuKind                = MenuKind::None;
