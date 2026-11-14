@@ -1,12 +1,20 @@
 #include "ListMenuFrame.h"
+#include "resources/Resources.h"
 #include "utils/logger.h"
 #include <algorithm>
 
 namespace {
+    //! layout units; the textures are 1.5x for 1080p
+    constexpr float TEX_SCALE   = 1.0f / 1.5f;
     constexpr int32_t ROW_W     = 560;
-    constexpr int32_t ROW_H     = 58;
-    constexpr int32_t ROW_GAP   = 8;
-    constexpr int32_t MAX_ROWS  = 8; // more than that does not fit, the list scrolls with the selection
+    constexpr int32_t ROW_H     = 62;
+    constexpr int32_t ROW_GAP   = 14;
+    constexpr int32_t MAX_ROWS  = 6; // more than that does not fit, the list scrolls with the selection
+    constexpr int32_t HEADER_H  = 64;
+    constexpr int32_t BOTTOM_H  = 40;
+    constexpr int32_t BACK_H    = 56;
+    constexpr int32_t PADDING   = 24;
+    constexpr int32_t BACK_GAP  = 30;
 
     GX2Color rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
         GX2Color c;
@@ -18,17 +26,20 @@ namespace {
     }
 
     int32_t panelHeight(size_t count) {
-        int32_t rows = (int32_t) std::min<size_t>(count, MAX_ROWS);
-        return 150 + rows * (ROW_H + ROW_GAP);
+        int32_t rows = (int32_t) std::min<size_t>(std::max<size_t>(count, 1), MAX_ROWS);
+        return HEADER_H + PADDING + rows * (ROW_H + ROW_GAP) - ROW_GAP + BACK_GAP + BACK_H + PADDING;
     }
 } // namespace
 
 ListMenuFrame::ListMenuFrame(int32_t w, int32_t h, const std::string &title, const std::vector<std::string> &labels, int32_t initialSelection)
     : GuiFrame(w, h),
-      dim(w, h, rgba(0, 0, 0, 150)),
-      panel(ROW_W + 60, panelHeight(labels.size()), rgba(22, 26, 44, 245)),
-      titleText(title.c_str(), 36, glm::vec4(1.0f)),
-      hintText("A Select    B Cancel", 24, glm::vec4(1.0f, 1.0f, 1.0f, 0.7f)),
+      topData(Resources::GetImageData("dialogTop.png")), midData(Resources::GetImageData("dialogMid.png")),
+      bottomData(Resources::GetImageData("dialogBottom.png")), rowData(Resources::GetImageData("dialogRow.png")),
+      backData(Resources::GetImageData("dialogBack.png")), selectData(Resources::GetImageData("dialogSelect.png")),
+      dim(w, h, rgba(40, 46, 52, 120)),
+      panelTop(topData), panelMid(midData), panelBottom(bottomData), selectImage(selectData),
+      titleText(title.c_str(), 30, glm::vec4(1.0f)),
+      backImage(backData), backText("Back", 30, glm::vec4(1.0f)), backButton(ROW_W, BACK_H),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
       upTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_UP | GuiTrigger::STICK_L_UP, true),
@@ -38,35 +49,53 @@ ListMenuFrame::ListMenuFrame(int32_t w, int32_t h, const std::string &title, con
       upButton(w, h), downButton(w, h), confirmButton(w, h), cancelButton(w, h) {
 
     append(&dim);
-    panel.setAlignment(ALIGN_CENTER | ALIGN_MIDDLE);
-    append(&panel);
 
-    int32_t top = panelHeight(labels.size()) / 2;
-    titleText.setAlignment(ALIGN_CENTER | ALIGN_MIDDLE);
-    titleText.setPosition(0, top - 45);
-    titleText.setMaxWidth(ROW_W, GuiText::DOTTED);
-    titleText.setBlurGlowColor(5.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
+    //! panel: header, a white middle stretched to the height, rounded bottom
+    float height = (float) panelHeight(labels.size());
+    float top    = height * 0.5f;
+    panelTop.setScale(TEX_SCALE);
+    panelTop.setPosition(0, top - HEADER_H * 0.5f);
+    panelBottom.setScale(TEX_SCALE);
+    panelBottom.setPosition(0, -top + BOTTOM_H * 0.5f);
+    float midHeight = height - HEADER_H - BOTTOM_H + 2.0f;
+    panelMid.setScaleX(TEX_SCALE);
+    panelMid.setScaleY(midHeight / panelMid.getHeight());
+    panelMid.setPosition(0, (top - HEADER_H + (-top + BOTTOM_H)) * 0.5f);
+    append(&panelMid);
+    append(&panelTop);
+    append(&panelBottom);
+
+    titleText.setPosition(0, top - HEADER_H * 0.5f);
+    titleText.setMaxWidth(ROW_W + 20, GuiText::DOTTED);
     append(&titleText);
-
-    hintText.setAlignment(ALIGN_CENTER | ALIGN_MIDDLE);
-    hintText.setPosition(0, -top + 30);
-    append(&hintText);
 
     for (size_t i = 0; i < labels.size(); i++) {
         Option option;
         option.button     = new GuiButton(ROW_W, ROW_H);
-        option.background = new GuiImage(ROW_W, ROW_H, rgba(255, 255, 255, 30));
+        option.background = new GuiImage(rowData);
+        option.background->setScale(TEX_SCALE);
         option.button->setImage(option.background);
-        option.text = new GuiText(labels[i].c_str(), 30, glm::vec4(1.0f));
+        option.text = new GuiText(labels[i].c_str(), 30, glm::vec4(0.2f, 0.21f, 0.23f, 1.0f));
         option.text->setMaxWidth(ROW_W - 30, GuiText::DOTTED);
         option.button->setLabel(option.text);
-        option.button->setAlignment(ALIGN_CENTER | ALIGN_MIDDLE);
         option.button->setTrigger(&touchTrigger);
         option.button->setTrigger(&wpadTouchTrigger);
         option.button->clicked.connect(this, &ListMenuFrame::OnOptionClick);
         append(option.button);
         options.push_back(option);
     }
+
+    backImage.setScale(TEX_SCALE);
+    backButton.setImage(&backImage);
+    backButton.setLabel(&backText);
+    backButton.setPosition(0, -top + PADDING + BACK_H * 0.5f);
+    backButton.setTrigger(&touchTrigger);
+    backButton.setTrigger(&wpadTouchTrigger);
+    backButton.clicked.connect(this, &ListMenuFrame::OnCancel);
+    append(&backButton);
+
+    selectImage.setScale(TEX_SCALE);
+    append(&selectImage);
 
     upButton.setTrigger(&upTrigger);
     upButton.clicked.connect(this, &ListMenuFrame::OnMove);
@@ -92,22 +121,24 @@ ListMenuFrame::~ListMenuFrame() {
         delete option.text;
     }
     options.clear();
+    for (auto *data : {topData, midData, bottomData, rowData, backData, selectData}) {
+        Resources::RemoveImageData(data);
+    }
 }
 
 void ListMenuFrame::select(int32_t index) {
-    if (options.empty()) {
-        return;
-    }
-    selected = std::max(0, std::min(index, (int32_t) options.size() - 1));
+    int32_t count = (int32_t) options.size();
+    //! 0..count-1 are the options, count is the Back button
+    selected = std::max(0, std::min(index, count));
 
     //! show a window of MAX_ROWS rows that contains the selection
-    int32_t count = (int32_t) options.size();
+    int32_t focus = std::min(selected, count - 1);
     int32_t first = 0;
     if (count > MAX_ROWS) {
-        first = std::min(std::max(0, selected - MAX_ROWS / 2), count - MAX_ROWS);
+        first = std::min(std::max(0, focus - MAX_ROWS / 2), count - MAX_ROWS);
     }
     int32_t rows = std::min(count, MAX_ROWS);
-    int32_t top  = panelHeight(options.size()) / 2 - 95;
+    float top    = panelHeight(options.size()) * 0.5f - HEADER_H - PADDING;
 
     for (int32_t i = 0; i < count; i++) {
         bool visible = i >= first && i < first + rows;
@@ -117,10 +148,16 @@ void ListMenuFrame::select(int32_t index) {
         } else {
             options[i].button->setState(GuiElement::STATE_DISABLED);
         }
-        options[i].button->setPosition(0, top - (i - first) * (ROW_H + ROW_GAP) - ROW_H / 2);
+        options[i].button->setPosition(0, top - (i - first) * (ROW_H + ROW_GAP) - ROW_H * 0.5f);
+    }
 
-        bool isSelected = i == selected;
-        options[i].background->setImageColor(isSelected ? rgba(28, 167, 255, 200) : rgba(255, 255, 255, 30));
+    //! cyan corner brackets around the selection
+    if (selected < count) {
+        selectImage.setScaleY(TEX_SCALE);
+        selectImage.setPosition(0, options[selected].button->getOffsetY());
+    } else {
+        selectImage.setScaleY(TEX_SCALE * (BACK_H + 24.0f) / (ROW_H + 24.0f));
+        selectImage.setPosition(0, backButton.getOffsetY());
     }
 }
 
@@ -139,6 +176,10 @@ void ListMenuFrame::OnMove(GuiButton *button, const GuiController *controller, G
 }
 
 void ListMenuFrame::OnConfirm(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    if (selected >= (int32_t) options.size()) {
+        OnCancel(button, controller, trigger); // Back
+        return;
+    }
     if (done || options.empty()) {
         return;
     }

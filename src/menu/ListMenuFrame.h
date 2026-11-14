@@ -10,8 +10,9 @@
 #include <vector>
 
 /**
- * Small modal menu: a title and a vertical list of options. D-pad / touch to choose,
- * A to confirm, B to cancel.
+ * Small modal menu in the style of the Wii U Menu's dialogs: white panel with a dark header,
+ * glossy option buttons, cyan corner brackets on the selection and a dark Back button.
+ * D-pad / touch to choose, A to confirm, B (or Back) to cancel.
  */
 class ListMenuFrame : public GuiFrame, public sigslot::has_slots<> {
 public:
@@ -38,13 +39,17 @@ private:
     };
 
     bool done        = false;
-    int32_t selected = 0;
+    int32_t selected = 0; // options.size() is the Back button
     std::vector<Option> options;
 
+    GuiImageData *topData, *midData, *bottomData, *rowData, *backData, *selectData;
     GuiImage dim;
-    GuiImage panel;
+    GuiImage panelTop, panelMid, panelBottom;
+    GuiImage selectImage;
     GuiText titleText;
-    GuiText hintText;
+    GuiImage backImage;
+    GuiText backText;
+    GuiButton backButton;
 
     GuiTrigger touchTrigger;
     GuiTrigger wpadTouchTrigger;

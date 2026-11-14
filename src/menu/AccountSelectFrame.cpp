@@ -8,18 +8,18 @@ namespace {
 
     GX2Color backgroundColor() {
         GX2Color c;
-        c.r = 10;
-        c.g = 12;
-        c.b = 24;
-        c.a = 235;
+        c.r = 240; // light theme
+        c.g = 243;
+        c.b = 246;
+        c.a = 250;
         return c;
     }
 
     GX2Color placeholderColor() {
         GX2Color c;
-        c.r = 70;
-        c.g = 80;
-        c.b = 110;
+        c.r = 210;
+        c.g = 216;
+        c.b = 222;
         c.a = 255;
         return c;
     }
@@ -29,8 +29,8 @@ AccountSelectFrame::AccountSelectFrame(int32_t w, int32_t h, const std::vector<A
     : GuiFrame(w, h),
       allowCancel(allowCancel),
       background(w, h, backgroundColor()),
-      titleText("Who will be using the Wii U?", 46, glm::vec4(1.0f)),
-      hintText(allowCancel ? "A Select    B Cancel" : "A Select", 28, glm::vec4(1.0f, 1.0f, 1.0f, 0.8f)),
+      titleText("Who will be using the Wii U?", 46, glm::vec4(0.22f, 0.24f, 0.26f, 1.0f)),
+      hintText(allowCancel ? "A Select    B Cancel" : "A Select", 28, glm::vec4(0.3f, 0.32f, 0.34f, 1.0f)),
       touchTrigger(GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH),
       wpadTouchTrigger(GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A),
       leftTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_LEFT | GuiTrigger::STICK_L_LEFT, true),
@@ -45,7 +45,6 @@ AccountSelectFrame::AccountSelectFrame(int32_t w, int32_t h, const std::vector<A
 
     titleText.setAlignment(ALIGN_CENTER | ALIGN_TOP);
     titleText.setPosition(0, -60);
-    titleText.setBlurGlowColor(5.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
     append(&titleText);
 
     hintText.setAlignment(ALIGN_CENTER | ALIGN_BOTTOM);
@@ -74,7 +73,7 @@ AccountSelectFrame::AccountSelectFrame(int32_t w, int32_t h, const std::vector<A
             entry.button->setImage(entry.placeholder);
         }
 
-        entry.nameText = new GuiText(account.name.c_str(), 30, glm::vec4(1.0f));
+        entry.nameText = new GuiText(account.name.c_str(), 30, glm::vec4(0.22f, 0.24f, 0.26f, 1.0f));
         entry.nameText->setAlignment(ALIGN_CENTER | ALIGN_BOTTOM);
         entry.nameText->setMaxWidth(ENTRY_W, GuiText::DOTTED);
         entry.button->setLabel(entry.nameText);
@@ -149,7 +148,7 @@ void AccountSelectFrame::select(int32_t index) {
         entries[i].button->setScale(isSelected ? 1.15f : 0.9f);
         entries[i].button->setAlpha(isSelected ? 1.0f : 0.6f);
         if (isSelected) {
-            entries[i].nameText->setBlurGlowColor(5.0f, glm::vec4(0.109804, 0.6549, 1.0f, 1.0f));
+            entries[i].nameText->setBlurGlowColor(5.0f, glm::vec4(0.45f, 0.85f, 1.0f, 1.0f));
         } else {
             entries[i].nameText->setBlurGlowColor(0.0f, glm::vec4(0.0f));
         }
