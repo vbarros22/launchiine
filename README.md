@@ -1,4 +1,4 @@
-## Launchiine (community continuation, v0.2 beta)
+## Launchiine (community continuation, v0.3 beta)
 
 A Wii U Menu replacement for [Aroma](https://aroma.foryour.cafe/), based on [launchiine by Maschell](https://github.com/wiiu-env/launchiine).
 The original was published as an unfinished work in progress; this fork picks it up and makes it usable day to day.
@@ -14,18 +14,28 @@ The original was published as an unfinished work in progress; this fork picks it
 | ![Search](docs/screenshots/search.jpg) | ![Games](docs/screenshots/games.jpg) |
 
 ### What changed compared to the original
+**Looks like the Wii U Menu** (all graphics are new drawings, no Nintendo files are included)
+- Light theme with glass tiles, cyan selection with a *Start* band, name bubble over the selected icon.
+- Neighbouring pages peek in at the screen edges, big white page arrows, page dots.
+- Folders with a grid icon and their name, a colored background inside, name bar, folder settings (wrench) and back tab.
+- Dialogs with a white panel, dark header and glossy buttons.
+- The TV is rendered at the console resolution (1080p when set).
+
+**Works like a day-to-day menu**
 - **Stability:** fixed the random freezes and crashes (threading in the icon loader, GPU commands sent from a second thread,
   GUI objects deleted on another thread, file reads overwriting neighbouring memory, a hang on exit).
-- **Gamepad controls:** D-pad / left stick to select, A to start, L/R to change pages (the selection follows).
+- **Gamepad and touch controls:** D-pad / left stick / touch to select, A or a tap on the selected icon to start, L/R to change pages.
 - **Alphabetical order** by full name, system apps first.
-- **Folders:** fixed *System* and *Homebrew* folders. Any title can be taken out of its folder (and put back) with Y.
+- **Folders:** fixed *System* and *Homebrew* folders plus your own folders (create, move titles, rename, delete, change color).
 - **Homebrew:** `.rpx` / `.wuhb` apps from `sd:/wiiu/apps` show up and start like in the original menu
   (needs the [homebrew_on_menu](https://github.com/wiiu-env/homebrew_on_menu_plugin) plugin, included in Aroma).
 - **Search** (+ button): matches words in the short and the full name, ignores case, accents and punctuation,
   also finds titles inside folders.
-- **Faster start:** names are cached on the SD card; the visible page gets its icons first (~1 s), all icons in a few seconds.
+- **Accounts (experimental):** the current user's Mii in the corner, X opens the user picker, asks at boot without a default account.
+- **Game update notice:** titles with a newer update on Nintendo's servers get an orange badge and *Update available*.
+- **Fast start:** names and icons are cached on the SD card; the menu is complete in well under a second.
 - The menu opens on the last started title (inside its folder if needed).
-- Names follow the console language, the title bar shows the full name and shrinks the font so it fits.
+- Names follow the console language.
 - ZL opens System Settings.
 
 ### Installation
@@ -41,25 +51,28 @@ To go back to the original menu, delete (or rename) `men.rpx`.
 | Button | Action |
 |---|---|
 | D-pad / left stick / touch | Select |
-| A (or tap twice) | Start the title / open the folder |
-| B | Leave the folder |
-| Y | Take the selected title out of its folder / put it back |
+| A (or tap the selected icon) | Start the title / open the folder |
+| B (or the back tab) | Leave the folder / close a dialog |
+| Y | Move the selected title (to a folder, the main grid or a new folder); on a folder: folder settings |
 | + | Search (empty search shows everything again) |
+| X (or tap the Mii) | Choose the user |
 | L / R | Previous / next page |
 | ZL | System Settings |
 
 ### Files on the SD card
 Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
 - `names.txt` – cached title names (rebuilt automatically)
+- `icons.bin` – cached icons (rebuilt automatically)
+- `updates.txt` – latest update versions from the last check
 - `lastTitle.txt` – last started title
-- `outsideFolders.txt` – titles taken out of their folder
+- `folders.txt` – your folders, their colors and which titles were moved
 
 ### Known limitations
-- No account selection when there is no default account, no account management.
-- No update check for games, no download of updates.
+- Account switching has only been tested with a single account.
+- Updates are only announced; download them through the original menu or System Settings.
 - Quick Start Menu and external storage handling rely on Aroma's [AutobootModule](https://github.com/wiiu-env/AutobootModule).
 - No Wara Wara Plaza / TV view; the TV mirrors the grid.
-- No sound on the splash screen.
+- No menu music or splash sound from the original menu.
 - There is no way to open the original Wii U Menu from launchiine yet (delete `men.rpx` instead).
 - Leaving System Settings or Wii titles reboots the system and Aroma has to load again; that takes a moment, like with the original menu.
 
@@ -91,4 +104,4 @@ Without Docker: install [wut](https://github.com/devkitPro/wut) and [libgui](htt
 ### Credits
 - [Maschell](https://github.com/Maschell) – original launchiine, Aroma, Mocha, libgui and most of the Wii U homebrew environment
 - Dimok – the original libgui / GUI code this is built on
-- Continuation: vbarros22
+- Continuation: vbarros22, developed with AI assistance (Claude by Anthropic) and tested on a real console
