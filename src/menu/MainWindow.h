@@ -244,6 +244,12 @@ private:
     static constexpr uint64_t FOLDER_ACTION_DELETE = 3;
 
     ListMenuFrame *listMenu          = nullptr;
+    //! TV: cover and description of the selected game (ZR switches to the icon grid)
+    class TvInfoFrame *tvInfo        = nullptr;
+    bool tvInfoEnabled               = true;
+    bool gameDbStarted               = false;
+    int32_t loaderDoneFrames         = 0;
+    void updateTvInfo(uint64_t titleId);
     MenuKind menuKind                = MenuKind::None;
     uint64_t menuTarget              = 0; // the title or folder the menu is about
     uint64_t menuNeighbor            = 0; // selected after the title moved away

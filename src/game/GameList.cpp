@@ -99,7 +99,12 @@ namespace {
                 longName = meta->longname_en;
             }
             outLongName    = fixedString(longName, sizeof(meta->longname_en));
+            //! "WUP-P-AMKE/0001": product and company code, together they give the GameTDB id
             outProductCode = fixedString(meta->product_code, sizeof(meta->product_code));
+            std::string company = fixedString(meta->company_code, sizeof(meta->company_code));
+            if (!company.empty()) {
+                outProductCode += "/" + company;
+            }
         }
         free(meta);
         return result;

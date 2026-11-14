@@ -27,12 +27,15 @@
 #include "utils/AsyncExecutor.h"
 #include "game/Folders.h"
 #include "game/Updates.h"
+#include "game/GameDb.h"
+#include "TvInfoFrame.h"
 #include <coreinit/title.h>
 #include <cinttypes>
 #include <cstdio>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <malloc.h>
+#include <chrono>
 #include <future>
 #include <nn/acp/title.h>
 #include <sysapp/launch.h>
@@ -190,6 +193,7 @@ void MainWindow::saveLastTitle(uint64_t titleId) {
 void MainWindow::stopTitleLoader() {
     gameList.stopLoading();
     Updates::stop();
+    GameDb::stop();
     if (titleLoader.valid()) {
         DEBUG_FUNCTION_LINE("Waiting for the title loader to stop");
         titleLoader.wait();
@@ -263,6 +267,31 @@ void MainWindow::process() {
 
     if (inputCooldown > 0) {
         inputCooldown--;
+    }
+
+    //! GameTDB info for the TV once all titles (and their product codes) are known
+    if (!gameDbStarted && titleLoader.valid() && titleLoader.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        if (++loaderDoneFrames > 30) {
+            gameDbStarted = true;
+            std::vector<std::string> ids;
+            gameList.lock();
+            for (auto *info : gameList.getFullGameList()) {
+                std::string id = GameDb::idFromProductCode(info->productCode);
+                if (!id.empty()) {
+                    ids.push_back(id);
+                }
+            }
+            gameList.unlock();
+            DEBUG_FUNCTION_LINE("GameTDB: %d games with an id", (int) ids.size());
+            GameDb::start(ids);
+        }
+    }
+    if (tvInfo != nullptr && currentTvFrame != nullptr) {
+        currentTvFrame->setVisible(!tvInfoEnabled);
+        tvInfo->setVisible(tvInfoEnabled);
+        if (currentDrcFrame != nullptr) {
+            updateTvInfo(currentDrcFrame->getSelectedGame());
+        }
     }
 
     //! dont read behind the initial elements in case one was added
@@ -490,10 +519,35 @@ void MainWindow::SetupMainView() {
 
     appendDrc(currentDrcFrame);
     append(mainSwitchButtonFrame);
+
+    tvInfo = new TvInfoFrame(width, height);
+    appendTv(tvInfo);
+}
+
+void MainWindow::updateTvInfo(uint64_t titleId) {
+    std::string name;
+    std::string dbId;
+    GuiImageData *icon = nullptr;
+    if (Folders::isFolder(titleId)) {
+        name = Folders::folderName(titleId);
+    } else {
+        gameInfo *info = gameList.getGameInfo(titleId);
+        if (info != nullptr) {
+            name = info->longName.empty() ? info->name : info->longName;
+            dbId = GameDb::idFromProductCode(info->productCode);
+            icon = info->imageData;
+        }
+    }
+    tvInfo->showTitle(titleId, name, dbId, icon); // cheap when nothing changed
 }
 
 void MainWindow::OnLayoutSwitchClicked(GuiElement *element) {
     if (!currentTvFrame || !currentDrcFrame || !mainSwitchButtonFrame) {
+        return;
+    }
+    //! ZR: TV between the game info and the icon grid
+    if (tvInfo != nullptr) {
+        tvInfoEnabled = !tvInfoEnabled;
         return;
     }
 

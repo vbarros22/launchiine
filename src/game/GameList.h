@@ -18,7 +18,7 @@ typedef struct _gameInfo {
     MCPAppType appType;
     std::string name;     // short name, shown in the menu
     std::string longName; // full name, only used for search ("The Legend of Zelda: ...")
-    std::string productCode; // "WUP-P-ALZE", used to sort titles into folders
+    std::string productCode; // "WUP-P-ALZE/0001": product code / company code (GameTDB id "ALZE01")
     std::string gamePath;
     GuiImageData *imageData;
     MCPTitleListType mcpInfo; // as reported by MCP_TitleList, needed to launch homebrew
