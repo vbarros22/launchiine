@@ -132,7 +132,7 @@ void TvInfoFrame::showTitle(uint64_t id, const std::string &titleName, const std
     }
     if (icon != nullptr) {
         iconImage = new GuiImage(icon);
-        iconImage->setScale(300.0f / std::max(1, iconImage->getWidth()));
+        iconImage->setScale(300.0f / std::max(1.0f, (float) iconImage->getWidth()));
         iconImage->setPosition(COVER_X, 0);
         append(iconImage);
     }
