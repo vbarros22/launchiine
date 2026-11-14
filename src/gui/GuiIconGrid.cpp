@@ -321,10 +321,11 @@ void GuiIconGrid::setupFolders() {
 
         GuiText *&label = folderLabels[folder.id];
         if (label == nullptr) {
-            label = new GuiText((char *) nullptr, 24, glm::vec4(1.0f));
+            //! dark text with a white halo, readable on the light squares
+            label = new GuiText((char *) nullptr, 24, glm::vec4(0.12f, 0.14f, 0.16f, 1.0f));
             label->setParent(this);
             label->setMaxWidth(118, GuiText::DOTTED);
-            label->setBlurGlowColor(4.0f, glm::vec4(0.15f, 0.2f, 0.25f, 1.0f));
+            label->setBlurGlowColor(6.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
         }
         label->setText(folder.name.c_str());
 
@@ -977,9 +978,10 @@ void GuiIconGrid::OnGameButtonClick(GuiButton *button, const GuiController *cont
     containerMutex.lock();
     for (auto const &x : gameInfoContainers) {
         if (x.second->button == button) {
+            //! like the Wii U Menu: the first tap selects, a tap on the selected icon opens it
+            //! (before it had to be a double tap within half a second, slower taps did nothing)
             if (selectedGame == (x.second->info->titleId)) {
-                if (gameLaunchTimer < 30)
-                    OnLaunchClick(button, controller, trigger);
+                OnLaunchClick(button, controller, trigger);
             } else {
                 setSelectedGame(x.second->info->titleId);
                 gameSelectionChanged(this, selectedGame);
@@ -1124,8 +1126,14 @@ void GuiIconGrid::process() {
         for (GuiElement *e : std::initializer_list<GuiElement *>{folderBarImage, &folderBarText, folderWrenchButton, folderBackButton}) {
             e->setVisible(inFolder);
         }
-        folderWrenchButton->setState(inFolder ? GuiElement::STATE_DEFAULT : GuiElement::STATE_DISABLED);
-        folderBackButton->setState(inFolder ? GuiElement::STATE_DEFAULT : GuiElement::STATE_DISABLED);
+        //! setState only adds state bits, enabling needs clearState
+        for (GuiButton *b : {folderWrenchButton, folderBackButton}) {
+            if (inFolder) {
+                b->clearState(GuiElement::STATE_DISABLED);
+            } else {
+                b->setState(GuiElement::STATE_DISABLED);
+            }
+        }
         gameTitle.setVisible(!inFolder);
     }
     if (inFolder) {
