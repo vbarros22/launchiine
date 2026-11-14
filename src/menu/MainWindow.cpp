@@ -654,7 +654,7 @@ void MainWindow::openOriginalMenu() {
         return;
     }
     if (rename(men.c_str(), disabled.c_str()) != 0) {
-        remove(RESTORE_MARKER);
+        ::remove(RESTORE_MARKER);
         refreshFolderViews({}, "Could not rename men.rpx");
         return;
     }
