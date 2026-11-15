@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -10,8 +11,8 @@
  *
  * A worker thread downloads the Wii U database once (wiiutdb.zip, in the console language),
  * keeps only the installed games in sd:/wiiu/launchiine/gamedb.txt and downloads covers on
- * demand to sd:/wiiu/launchiine/covers/<ID>.tga (decoded and scaled once, so showing a cover
- * does not stall the menu). A wiiutdb.zip copied to
+ * demand to sd:/wiiu/launchiine/covers/<ID>.lcv (decoded and scaled once to raw RGB565, so
+ * showing a cover is a plain copy). A wiiutdb.zip copied to
  * sd:/wiiu/launchiine/ by hand is used as well.
  */
 namespace GameDb {
@@ -38,13 +39,21 @@ namespace GameDb {
     //! false while the info is unknown (not downloaded yet / not in the database)
     bool get(const std::string &id, Info &out);
 
-    //! Asks the worker for the cover of this game (only the latest request counts).
-    void requestCover(const std::string &id);
+    //! decoded cover: RGB565 pixels, ready to be copied into a texture
+    struct Cover {
+        uint16_t width  = 0;
+        uint16_t height = 0;
+        std::vector<uint16_t> pixels;
+    };
 
     enum class CoverState { Pending, Ready, None };
-    //! Result of requestCover: Ready fills tga (an uncompressed TGA, cheap to turn into a
-    //! texture), None when the game has no cover. Render thread.
-    CoverState takeCover(const std::string &id, std::vector<uint8_t> &tga);
+    //! Ready: the cover is in memory. Pending: the worker loads it (from the SD card or
+    //! GameTDB), ask again in the next frames. None: the game has no cover. Render thread.
+    CoverState getCover(const std::string &id, std::shared_ptr<const Cover> &out);
+
+    //! Loads these covers into memory in the background (the pages around the selection),
+    //! so they show up instantly. Replaces the previous list.
+    void prefetchCovers(const std::vector<std::string> &ids);
 
     //! changes whenever new info or a new cover arrived
     uint32_t generation();

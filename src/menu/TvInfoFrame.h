@@ -5,6 +5,7 @@
 #include <gui/GuiImageData.h>
 #include <gui/GuiText.h>
 #include "gui/GameIcon.h"
+#include "gui/RawImage.h"
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,18 +28,14 @@ public:
 
 private:
     void refreshText();
-    void setCover(GuiImageData *data);
-    void releaseOld(bool all);
+    void setCover(RawImage *image);
+    bool tryCover();
 
     GuiImageData *backgroundData = nullptr;
     GuiImage *background         = nullptr;
 
-    GuiImageData *coverData = nullptr;
-    GuiImage *coverImage    = nullptr;
+    RawImage *coverImage    = nullptr;
     GameIcon *iconImage     = nullptr; // when there is no cover: the icon, rounded like on the grid
-    //! textures the GPU may still read from the last frames, freed a bit later
-    std::vector<std::pair<GuiImageData *, int32_t>> oldData;
-    std::vector<GuiImage *> oldImages;
 
     GuiText titleText;
     GuiText metaText;

@@ -249,6 +249,7 @@ private:
     bool tvInfoEnabled               = true;
     bool gameDbStarted               = false;
     int32_t loaderDoneFrames         = 0;
+    int64_t prefetchKey              = -1; // display order version and page of the last cover prefetch
     void updateTvInfo(uint64_t titleId);
     MenuKind menuKind                = MenuKind::None;
     uint64_t menuTarget              = 0; // the title or folder the menu is about

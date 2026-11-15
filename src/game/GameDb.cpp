@@ -33,25 +33,27 @@ namespace {
     std::condition_variable wake;
     std::map<std::string, GameDb::Info> infos;
     std::set<std::string> wantedIds;
-    std::string coverRequest;                 // latest id the TV asked for
-    std::string coverReadyId;                 // result for this id is in coverReady
-    std::vector<uint8_t> coverReady;          // empty: no cover
-    std::set<std::string> coverMissing;       // no cover on GameTDB (this run)
+    //! covers in memory, the most recently used at the back
+    constexpr size_t COVER_CACHE_SIZE = 40;
+    std::deque<std::pair<std::string, std::shared_ptr<const GameDb::Cover>>> coverCache;
+    std::string coverRequest;           // the TV waits for this one
+    std::deque<std::string> prefetch;   // then these
+    std::set<std::string> coverMissing; // no cover on GameTDB (this run)
     std::atomic<uint32_t> changeCounter{0};
     std::atomic<bool> stopRequested{false};
     std::future<void> worker;
     bool networkFailed = false;
 
     std::string coverFile(const std::string &id) {
-        return std::string(COVER_DIR) + "/" + id + ".tga";
+        return std::string(COVER_DIR) + "/" + id + ".lcv";
     }
 
-    //! JPEG -> uncompressed 32 bit TGA (bottom-up), at most COVER_MAX_W wide
-    constexpr int COVER_MAX_W = 600;
-    bool jpegToTga(const std::string &jpeg, std::vector<uint8_t> &tga) {
+    //! JPEG -> RGB565 at most COVER_MAX_W wide. File: "LCV1", width, height (u16), pixels.
+    constexpr int COVER_MAX_W = 480;
+    std::shared_ptr<GameDb::Cover> jpegToCover(const std::string &jpeg) {
         gdImagePtr src = gdImageCreateFromJpegPtr((int) jpeg.size(), (void *) jpeg.data());
         if (src == nullptr) {
-            return false;
+            return nullptr;
         }
         int w = gdImageSX(src), h = gdImageSY(src);
         gdImagePtr img = src;
@@ -60,33 +62,59 @@ namespace {
             img    = gdImageCreateTrueColor(COVER_MAX_W, nh);
             if (img == nullptr) {
                 gdImageDestroy(src);
-                return false;
+                return nullptr;
             }
             gdImageCopyResampled(img, src, 0, 0, 0, 0, COVER_MAX_W, nh, w, h);
             gdImageDestroy(src);
             w = COVER_MAX_W;
             h = nh;
         }
-        tga.assign(18 + (size_t) w * h * 4, 0);
-        tga[2]  = 2; // uncompressed true color
-        tga[12] = w & 0xFF;
-        tga[13] = w >> 8;
-        tga[14] = h & 0xFF;
-        tga[15] = h >> 8;
-        tga[16] = 32;
-        tga[17] = 8; // 8 alpha bits, bottom-left origin
-        uint8_t *px = &tga[18];
-        for (int y = h - 1; y >= 0; y--) {
+        auto cover    = std::make_shared<GameDb::Cover>();
+        cover->width  = w;
+        cover->height = h;
+        cover->pixels.resize((size_t) w * h);
+        uint16_t *px = cover->pixels.data();
+        for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int c = gdImageTrueColorPixel(img, x, y);
-                *px++ = gdTrueColorGetBlue(c);
-                *px++ = gdTrueColorGetGreen(c);
-                *px++ = gdTrueColorGetRed(c);
-                *px++ = 0xFF;
+                *px++ = (uint16_t) (((gdTrueColorGetRed(c) >> 3) << 11) | ((gdTrueColorGetGreen(c) >> 2) << 5) | (gdTrueColorGetBlue(c) >> 3));
             }
         }
         gdImageDestroy(img);
-        return true;
+        return cover;
+    }
+
+    void saveCover(const std::string &path, const GameDb::Cover &cover) {
+        std::vector<uint8_t> data(8 + cover.pixels.size() * 2);
+        memcpy(&data[0], "LCV1", 4);
+        data[4] = cover.width >> 8;
+        data[5] = cover.width & 0xFF;
+        data[6] = cover.height >> 8;
+        data[7] = cover.height & 0xFF;
+        memcpy(&data[8], cover.pixels.data(), cover.pixels.size() * 2); // big endian, like the GPU wants
+        FSUtils::CreateSubfolder(COVER_DIR);
+        FSUtils::saveBufferToFile(path.c_str(), data.data(), data.size());
+    }
+
+    std::shared_ptr<GameDb::Cover> loadCover(const std::string &path) {
+        uint8_t *buffer = nullptr;
+        uint32_t size   = 0;
+        if (FSUtils::LoadFileToMem(path.c_str(), &buffer, &size) <= 0 || buffer == nullptr) {
+            return nullptr;
+        }
+        std::shared_ptr<GameDb::Cover> cover;
+        if (size > 8 && memcmp(buffer, "LCV1", 4) == 0) {
+            uint16_t w = (buffer[4] << 8) | buffer[5], h = (buffer[6] << 8) | buffer[7];
+            if (w > 0 && h > 0 && size >= 8 + (uint32_t) w * h * 2) {
+                cover         = std::make_shared<GameDb::Cover>();
+                cover->width  = w;
+                cover->height = h;
+                cover->pixels.resize((size_t) w * h);
+                memcpy(cover->pixels.data(), buffer + 8, (size_t) w * h * 2);
+            }
+        }
+        free(buffer);
+        return cover;
     }
 
     //! GameTDB language code of the console language
@@ -475,7 +503,7 @@ namespace {
     }
 
     //! front cover, by region of the id (4th letter), larger first
-    bool downloadCover(const std::string &id, const std::string &savePath, std::vector<uint8_t> &out) {
+    std::shared_ptr<GameDb::Cover> downloadCover(const std::string &id, const std::string &savePath) {
         char region = id.size() >= 4 ? id[3] : 'E';
         std::vector<std::string> regions;
         if (region == 'J') {
@@ -488,24 +516,24 @@ namespace {
         for (const char *kind : {"coverHQ", "coverM", "cover"}) {
             for (auto &r : regions) {
                 if (stopRequested) {
-                    return false;
+                    return nullptr;
                 }
                 std::string data;
                 if (download(std::string(COVER_URL) + kind + "/" + r + "/" + id + ".jpg", data)) {
-                    if (!jpegToTga(data, out)) {
+                    auto cover = jpegToCover(data);
+                    if (cover == nullptr) {
                         DEBUG_FUNCTION_LINE("Could not decode the cover of %s", id.c_str());
-                        return false;
+                        return nullptr;
                     }
-                    FSUtils::CreateSubfolder(COVER_DIR);
-                    FSUtils::saveBufferToFile(savePath.c_str(), out.data(), out.size());
-                    return true;
+                    saveCover(savePath, *cover);
+                    return cover;
                 }
                 if (networkFailed) {
-                    return false;
+                    return nullptr;
                 }
             }
         }
-        return false;
+        return nullptr;
     }
 
     void run() {
@@ -540,24 +568,41 @@ namespace {
             }
         }
 
-        //! covers, as the TV view asks for them
+        //! covers: first what the TV waits for, then the pages around the selection
         while (!stopRequested) {
             std::string id;
             {
                 std::unique_lock<std::mutex> guard(lock);
-                wake.wait(guard, [] { return stopRequested || (!coverRequest.empty() && coverRequest != coverReadyId); });
+                auto cached = [](const std::string &key) {
+                    for (auto &entry : coverCache) {
+                        if (entry.first == key) {
+                            return true;
+                        }
+                    }
+                    return coverMissing.count(key) != 0;
+                };
+                while (!prefetch.empty() && cached(prefetch.front())) {
+                    prefetch.pop_front();
+                }
+                wake.wait(guard, [&] { return stopRequested || (!coverRequest.empty() && !cached(coverRequest)) || !prefetch.empty(); });
                 if (stopRequested) {
                     break;
                 }
-                id = coverRequest;
+                if (!coverRequest.empty() && !cached(coverRequest)) {
+                    id = coverRequest;
+                } else if (!prefetch.empty()) {
+                    id = prefetch.front();
+                    prefetch.pop_front();
+                    if (cached(id)) {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
             }
-            std::vector<uint8_t> tga;
-            uint8_t *buffer = nullptr;
-            uint32_t size   = 0;
-            if (FSUtils::LoadFileToMem(coverFile(id).c_str(), &buffer, &size) > 0 && buffer != nullptr) {
-                tga.assign(buffer, buffer + size);
-                free(buffer);
-            } else if (coverMissing.count(id) == 0 && !networkFailed) {
+
+            std::shared_ptr<GameDb::Cover> cover = loadCover(coverFile(id));
+            if (cover == nullptr && !networkFailed) {
                 std::string tdbId = id;
                 {
                     std::lock_guard<std::mutex> guard(lock);
@@ -566,14 +611,17 @@ namespace {
                         tdbId = info->second.tdbId;
                     }
                 }
-                if (!downloadCover(tdbId, coverFile(id), tga)) {
-                    tga.clear();
-                    coverMissing.insert(id);
-                }
+                cover = downloadCover(tdbId, coverFile(id));
             }
             std::lock_guard<std::mutex> guard(lock);
-            coverReadyId = id;
-            coverReady.swap(tga);
+            if (cover == nullptr) {
+                coverMissing.insert(id);
+            } else {
+                coverCache.emplace_back(id, cover);
+                while (coverCache.size() > COVER_CACHE_SIZE) {
+                    coverCache.pop_front();
+                }
+            }
             changeCounter++;
         }
     }
@@ -633,24 +681,35 @@ bool GameDb::get(const std::string &id, Info &out) {
     return true;
 }
 
-void GameDb::requestCover(const std::string &id) {
+GameDb::CoverState GameDb::getCover(const std::string &id, std::shared_ptr<const Cover> &out) {
+    if (id.empty()) {
+        return CoverState::None;
+    }
     std::lock_guard<std::mutex> guard(lock);
+    for (auto it = coverCache.begin(); it != coverCache.end(); ++it) {
+        if (it->first == id) {
+            out = it->second;
+            //! most recently used to the back
+            auto entry = *it;
+            coverCache.erase(it);
+            coverCache.push_back(entry);
+            return CoverState::Ready;
+        }
+    }
+    if (coverMissing.count(id) != 0) {
+        return CoverState::None;
+    }
     if (coverRequest != id) {
         coverRequest = id;
         wake.notify_all();
     }
+    return CoverState::Pending;
 }
 
-GameDb::CoverState GameDb::takeCover(const std::string &id, std::vector<uint8_t> &tga) {
+void GameDb::prefetchCovers(const std::vector<std::string> &ids) {
     std::lock_guard<std::mutex> guard(lock);
-    if (id.empty() || coverReadyId != id) {
-        return CoverState::Pending;
-    }
-    if (coverReady.empty()) {
-        return CoverState::None;
-    }
-    tga = coverReady; // keep a copy, the TV may ask again for the same game
-    return CoverState::Ready;
+    prefetch.assign(ids.begin(), ids.end());
+    wake.notify_all();
 }
 
 uint32_t GameDb::generation() {

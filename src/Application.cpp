@@ -21,6 +21,7 @@
 #include "utils/logger.h"
 #include <coreinit/core.h>
 #include <coreinit/foreground.h>
+#include <coreinit/time.h>
 #include <coreinit/title.h>
 #include <gui/FreeTypeGX.h>
 #include <gui/VPadController.h>
@@ -108,6 +109,8 @@ void Application::fadeOut() {
             i = 255;
 
         fadeOut.setAlpha(i / 255.0f);
+
+        OSTime inputDone = OSGetTime();
 
         //! start rendering DRC
         video->prepareDrcRendering();
@@ -215,8 +218,10 @@ void Application::executeThread() {
             continue;
         }
 
+        OSTime frameStart = OSGetTime();
         mainWindow->lockGUI();
         mainWindow->process();
+        OSTime processDone = OSGetTime();
 
         //! Read out inputs. While the software keyboard is open it reads the GamePad itself;
         //! a second VPADRead per frame would steal button presses from one of the two.
@@ -256,6 +261,14 @@ void Application::executeThread() {
         //! as last point update the effects as it can drop elements
         mainWindow->updateEffects();
         mainWindow->unlockGUI();
+
+        //! a frame has ~16 ms; log the ones that make the menu stutter and where the time went
+        OSTime frameEnd = OSGetTime();
+        if (OSTicksToMilliseconds(frameEnd - frameStart) > 20) {
+            DEBUG_FUNCTION_LINE("Slow frame: %lld ms (process %lld, input %lld, draw %lld)", OSTicksToMilliseconds(frameEnd - frameStart),
+                                OSTicksToMilliseconds(processDone - frameStart), OSTicksToMilliseconds(inputDone - processDone),
+                                OSTicksToMilliseconds(frameEnd - inputDone));
+        }
 
         video->waitForVSync();
 

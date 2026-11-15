@@ -58,47 +58,51 @@ TvInfoFrame::~TvInfoFrame() {
     Resources::RemoveImageData(backgroundData);
     if (coverImage != nullptr) {
         remove(coverImage);
-        delete coverImage;
+        AsyncExecutor::pushForDelete(coverImage);
     }
     if (iconImage != nullptr) {
         remove(iconImage);
         delete iconImage;
     }
-    delete coverData;
-    releaseOld(true);
 }
 
-void TvInfoFrame::releaseOld(bool all) {
-    for (auto it = oldData.begin(); it != oldData.end();) {
-        if (all || --it->second <= 0) {
-            delete it->first;
-            it = oldData.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-void TvInfoFrame::setCover(GuiImageData *data) {
+void TvInfoFrame::setCover(RawImage *image) {
     if (coverImage != nullptr) {
         remove(coverImage);
-        AsyncExecutor::pushForDelete(coverImage);
+        AsyncExecutor::pushForDelete(coverImage); // deleted once the GPU is done with it
         coverImage = nullptr;
     }
-    if (coverData != nullptr) {
-        oldData.emplace_back(coverData, 5); // the GPU may still use it for a few frames
-        coverData = nullptr;
-    }
-    if (data == nullptr || data->getTexture() == nullptr) {
-        delete data;
+    if (image == nullptr) {
         return;
     }
-    coverData  = data;
-    coverImage = new GuiImage(coverData);
+    if (!image->isValid()) {
+        delete image;
+        return;
+    }
+    coverImage  = image;
     float scale = std::min(COVER_MAX_W / coverImage->getWidth(), COVER_MAX_H / coverImage->getHeight());
     coverImage->setScale(scale);
     coverImage->setPosition(COVER_X, 0);
     append(coverImage);
+}
+
+//! true when the cover is known (shown, or the game has none)
+bool TvInfoFrame::tryCover() {
+    std::shared_ptr<const GameDb::Cover> cover;
+    auto state = GameDb::getCover(gameDbId, cover);
+    if (state == GameDb::CoverState::Ready) {
+        //! raw pixels from the worker: a row copy, nothing to decode here
+        setCover(new RawImage(cover->width, cover->height, cover->pixels.data()));
+        coverLoaded = coverImage != nullptr;
+        showIcon(!coverLoaded);
+        creditText.setVisible(hasInfo || coverLoaded);
+        return true;
+    }
+    if (state == GameDb::CoverState::None) {
+        showIcon(true);
+        return true;
+    }
+    return false;
 }
 
 void TvInfoFrame::showIcon(bool show) {
@@ -120,9 +124,6 @@ void TvInfoFrame::showTitle(uint64_t id, const std::string &titleName, const std
         framesSinceShown = 0;
         coverLoaded      = false;
         setCover(nullptr);
-        if (!gameDbId.empty()) {
-            GameDb::requestCover(gameDbId);
-        }
     }
 
     if (iconImage != nullptr) {
@@ -139,6 +140,9 @@ void TvInfoFrame::showTitle(uint64_t id, const std::string &titleName, const std
         showIcon(!coverLoaded && (gameDbId.empty() || framesSinceShown >= ICON_AFTER_FRAMES));
     }
     refreshText();
+    if (!sameTitle && !gameDbId.empty()) {
+        tryCover(); // usually already in memory: shown in this very frame
+    }
 }
 
 void TvInfoFrame::refreshText() {
@@ -178,25 +182,18 @@ void TvInfoFrame::refreshText() {
 }
 
 void TvInfoFrame::process() {
-    releaseOld(false);
-
     uint32_t generation = GameDb::generation();
     if (generation != seenGeneration) {
         seenGeneration = generation;
         refreshText();
+        if (!coverLoaded) {
+            framesSinceShown = std::min(framesSinceShown, ICON_AFTER_FRAMES); // a cover may have arrived
+        }
     }
 
-    if (!coverLoaded && !gameDbId.empty()) {
+    if (!coverLoaded && !gameDbId.empty() && framesSinceShown <= ICON_AFTER_FRAMES) {
         framesSinceShown++;
-        std::vector<uint8_t> tga;
-        auto state = GameDb::takeCover(gameDbId, tga);
-        if (state == GameDb::CoverState::Ready) {
-            //! uncompressed TGA prepared by the worker: no JPEG decoding on this thread
-            setCover(new GuiImageData(tga.data(), (int32_t) tga.size()));
-            coverLoaded = coverImage != nullptr;
-            showIcon(!coverLoaded);
-            creditText.setVisible(hasInfo || coverLoaded);
-        } else if (state == GameDb::CoverState::None || framesSinceShown == ICON_AFTER_FRAMES) {
+        if (!tryCover() && framesSinceShown == ICON_AFTER_FRAMES) {
             showIcon(true);
         }
     }

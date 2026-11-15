@@ -35,6 +35,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <malloc.h>
+#include <algorithm>
 #include <chrono>
 #include <future>
 #include <nn/acp/title.h>
@@ -539,6 +540,29 @@ void MainWindow::updateTvInfo(uint64_t titleId) {
         }
     }
     tvInfo->showTitle(titleId, name, dbId, icon); // cheap when nothing changed
+
+    //! load the covers of this page and the ones next to it, so paging with L/R shows them at once
+    if (gameDbStarted && currentDrcFrame != nullptr) {
+        constexpr int32_t PER_PAGE = 15;
+        std::vector<uint64_t> order = currentDrcFrame->getDisplayOrder();
+        auto it                     = std::find(order.begin(), order.end(), titleId);
+        int32_t page                = it == order.end() ? 0 : (int32_t) (it - order.begin()) / PER_PAGE;
+        int64_t key                 = ((int64_t) currentDrcFrame->getDisplayOrderVersion() << 16) | page;
+        if (key != prefetchKey) {
+            prefetchKey = key;
+            std::vector<std::string> ids;
+            for (int32_t p : {page, page + 1, page - 1}) {
+                for (int32_t i = p * PER_PAGE; i >= 0 && i < (p + 1) * PER_PAGE && i < (int32_t) order.size(); i++) {
+                    gameInfo *info = gameList.getGameInfo(order[i]);
+                    std::string id = info != nullptr ? GameDb::idFromProductCode(info->productCode) : "";
+                    if (!id.empty()) {
+                        ids.push_back(id);
+                    }
+                }
+            }
+            GameDb::prefetchCovers(ids);
+        }
+    }
 }
 
 void MainWindow::OnLayoutSwitchClicked(GuiElement *element) {
