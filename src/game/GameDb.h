@@ -23,6 +23,7 @@ namespace GameDb {
         std::string year;
         std::string genre;
         std::string players;
+        std::string tdbId; // GameTDB's id: eShop games only have 4 characters ("BMTE")
     };
 
     //! "WUP-P-AMKE/0001" -> "AMKE01", empty when the product code has no GameTDB id

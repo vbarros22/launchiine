@@ -22,7 +22,7 @@
 namespace {
     constexpr const char *DIR_PATH     = "fs:/vol/external01/wiiu/launchiine";
     constexpr const char *COVER_DIR    = "fs:/vol/external01/wiiu/launchiine/covers";
-    constexpr const char *CACHE_FILE   = "fs:/vol/external01/wiiu/launchiine/gamedb.txt";
+    constexpr const char *CACHE_FILE   = "fs:/vol/external01/wiiu/launchiine/gamedb2.txt";
     constexpr const char *MANUAL_ZIP   = "fs:/vol/external01/wiiu/launchiine/wiiutdb.zip";
     constexpr const char *DB_URL       = "http://www.gametdb.com/wiiutdb.zip?LANG=";
     constexpr const char *COVER_URL    = "http://art.gametdb.com/wiiu/";
@@ -168,7 +168,7 @@ namespace {
                     c = '\n';
                 }
             }
-            out[f[0]] = {f[1], f[2], f[3], f[4], f[5], f[6], f[7]};
+            out[f[0]] = {f[1], f[2], f[3], f[4], f[5], f[6], f[7], f.size() > 8 && !f[8].empty() ? f[8] : f[0]};
         }
         return checkedAt;
     }
@@ -178,7 +178,7 @@ namespace {
         for (auto const &x : data) {
             const auto &i = x.second;
             text += x.first + "\t" + clean(i.title) + "\t" + clean(i.synopsis) + "\t" + clean(i.developer) + "\t" + clean(i.publisher) + "\t" +
-                    clean(i.year) + "\t" + clean(i.genre) + "\t" + clean(i.players) + "\n";
+                    clean(i.year) + "\t" + clean(i.genre) + "\t" + clean(i.players) + "\t" + i.tdbId + "\n";
         }
         FSUtils::CreateSubfolder(DIR_PATH);
         if (FSUtils::saveBufferToFile(CACHE_FILE, (void *) text.data(), text.size()) != (int32_t) text.size()) {
@@ -380,48 +380,52 @@ namespace {
         return b == std::string::npos ? "" : xml.substr(a, b - a);
     }
 
+    //! Reads the games we want from one database download. The locale is the language of the
+    //! download (with LANG=PT the English synopsis is left out, so English is a second pass).
     void parseDatabase(const std::string &xml, const std::set<std::string> &ids, const char *lang, std::map<std::string, GameDb::Info> &out) {
-        size_t pos   = 0;
-        int found    = 0;
+        //! eShop games are listed with 4 characters only ("BMTE" for our "BMTETL")
+        std::map<std::string, std::string> shortIds;
+        for (auto &id : ids) {
+            shortIds.emplace(id.substr(0, 4), id);
+        }
+        size_t pos               = 0;
+        int found                = 0;
         std::string localeWanted = std::string("<locale lang=\"") + lang + "\">";
         while ((pos = xml.find("<game ", pos)) != std::string::npos) {
             size_t end = xml.find("</game>", pos);
             if (end == std::string::npos) {
                 break;
             }
-            std::string id = tagText(xml, "id", pos, end);
-            if (ids.count(id) != 0) {
+            std::string tdbId = tagText(xml, "id", pos, end);
+            std::string ours;
+            if (ids.count(tdbId) != 0) {
+                ours = tdbId;
+            } else if (tdbId.size() == 4 && shortIds.count(tdbId) != 0) {
+                ours = shortIds[tdbId];
+            }
+            if (!ours.empty()) {
                 GameDb::Info info;
-                //! the console language first, English otherwise
+                info.tdbId    = tdbId;
                 size_t locale = xml.find(localeWanted, pos);
-                if (locale == std::string::npos || locale > end) {
-                    locale = xml.find("<locale lang=\"EN\">", pos);
-                }
                 if (locale != std::string::npos && locale < end) {
                     size_t localeEnd = xml.find("</locale>", locale);
                     info.title       = tagText(xml, "title", locale, localeEnd);
                     info.synopsis    = tagText(xml, "synopsis", locale, localeEnd);
-                }
-                if (info.synopsis.empty()) {
-                    size_t en = xml.find("<locale lang=\"EN\">", pos);
-                    if (en != std::string::npos && en < end) {
-                        info.synopsis = tagText(xml, "synopsis", en, xml.find("</locale>", en));
-                    }
                 }
                 info.developer = tagText(xml, "developer", pos, end);
                 info.publisher = tagText(xml, "publisher", pos, end);
                 info.year      = tagAttribute(xml, "date", "year", pos, end);
                 info.genre     = tagText(xml, "genre", pos, end);
                 info.players   = tagAttribute(xml, "input", "players", pos, end);
-                out[id]        = info;
+                out[ours]      = info;
                 found++;
             }
             pos = end + 7;
         }
-        DEBUG_FUNCTION_LINE("GameTDB: %d of %d games found", found, (int) ids.size());
+        DEBUG_FUNCTION_LINE("GameTDB (%s): %d of %d games found", lang, found, (int) ids.size());
     }
 
-    bool loadDatabase(const std::set<std::string> &ids, std::map<std::string, GameDb::Info> &out) {
+    bool readDatabase(const char *lang, const std::set<std::string> &ids, std::map<std::string, GameDb::Info> &out) {
         std::string zip;
         uint8_t *buffer = nullptr;
         uint32_t size   = 0;
@@ -429,7 +433,7 @@ namespace {
             DEBUG_FUNCTION_LINE("Using %s", MANUAL_ZIP);
             zip.assign((const char *) buffer, size);
             free(buffer);
-        } else if (!download(std::string(DB_URL) + languageCode(), zip)) {
+        } else if (!download(std::string(DB_URL) + lang, zip)) {
             return false;
         }
         std::string xml;
@@ -439,12 +443,39 @@ namespace {
         }
         zip.clear();
         zip.shrink_to_fit();
-        parseDatabase(xml, ids, languageCode(), out);
+        parseDatabase(xml, ids, lang, out);
+        return true;
+    }
+
+    //! console language first, every empty field filled from English
+    bool loadDatabase(const std::set<std::string> &ids, std::map<std::string, GameDb::Info> &out) {
+        std::string lang = languageCode();
+        std::map<std::string, GameDb::Info> english;
+        if (!readDatabase("EN", ids, english)) {
+            return false;
+        }
+        if (lang == "EN" || stopRequested) {
+            out.swap(english);
+            return true;
+        }
+        std::map<std::string, GameDb::Info> local;
+        readDatabase(lang.c_str(), ids, local); // without it English is still fine
+        out.swap(english);
+        for (auto &x : local) {
+            GameDb::Info &target = out[x.first];
+            const GameDb::Info &l = x.second;
+            for (auto field : {&GameDb::Info::title, &GameDb::Info::synopsis, &GameDb::Info::developer, &GameDb::Info::publisher,
+                               &GameDb::Info::year, &GameDb::Info::genre, &GameDb::Info::players, &GameDb::Info::tdbId}) {
+                if (!(l.*field).empty()) {
+                    target.*field = l.*field;
+                }
+            }
+        }
         return true;
     }
 
     //! front cover, by region of the id (4th letter), larger first
-    bool downloadCover(const std::string &id, std::vector<uint8_t> &out) {
+    bool downloadCover(const std::string &id, const std::string &savePath, std::vector<uint8_t> &out) {
         char region = id.size() >= 4 ? id[3] : 'E';
         std::vector<std::string> regions;
         if (region == 'J') {
@@ -466,8 +497,7 @@ namespace {
                         return false;
                     }
                     FSUtils::CreateSubfolder(COVER_DIR);
-                    std::string path = coverFile(id);
-                    FSUtils::saveBufferToFile(path.c_str(), out.data(), out.size());
+                    FSUtils::saveBufferToFile(savePath.c_str(), out.data(), out.size());
                     return true;
                 }
                 if (networkFailed) {
@@ -528,7 +558,15 @@ namespace {
                 tga.assign(buffer, buffer + size);
                 free(buffer);
             } else if (coverMissing.count(id) == 0 && !networkFailed) {
-                if (!downloadCover(id, tga)) {
+                std::string tdbId = id;
+                {
+                    std::lock_guard<std::mutex> guard(lock);
+                    auto info = infos.find(id);
+                    if (info != infos.end() && !info->second.tdbId.empty()) {
+                        tdbId = info->second.tdbId;
+                    }
+                }
+                if (!downloadCover(tdbId, coverFile(id), tga)) {
                     tga.clear();
                     coverMissing.insert(id);
                 }
