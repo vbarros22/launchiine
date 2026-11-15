@@ -4,6 +4,10 @@
 #include <gui/GuiImage.h>
 #include <gui/GuiImageData.h>
 #include <gui/GuiText.h>
+#include <gx2/context.h>
+#include <gx2/surface.h>
+#include <gx2/texture.h>
+#include <gx2/sampler.h>
 #include "gui/GameIcon.h"
 #include "gui/RawImage.h"
 #include <string>
@@ -51,4 +55,18 @@ private:
     void showIcon(bool show);
     bool coverLoaded         = false;
     bool hasInfo             = false;
+
+    //! The background and the texts are drawn once into a texture ("static layer") and that is
+    //! shown every frame: drawing a description letter by letter took 50-80 ms per frame.
+    void renderStaticLayer(CVideo *pVideo);
+    void drawStaticLayer(CVideo *pVideo);
+    CVideo *video                  = nullptr;
+    GX2ContextState *layerContext  = nullptr;
+    GX2ColorBuffer layerBuffer{};
+    GX2Texture layerTexture{};
+    GX2Sampler layerSampler{};
+    bool layerValid                = false; // layerBuffer shows the current texts
+    bool layerDirty                = true;
+    int32_t framesSinceTextChange  = 0;
+    std::string shownTitle, shownMeta, shownSynopsis;
 };
