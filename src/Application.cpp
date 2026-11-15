@@ -245,10 +245,12 @@ void Application::executeThread() {
         video->prepareDrcRendering();
         mainWindow->drawDrc(video);
         video->drcDrawDone();
+        OSTime drcDone = OSGetTime();
 
         //! start rendering TV
         video->prepareTvRendering();
         mainWindow->drawTv(video);
+        OSTime tvDrawn = OSGetTime();
         video->tvDrawDone();
 
         //! enable screen after first frame render
@@ -264,9 +266,9 @@ void Application::executeThread() {
         //! a frame has ~16 ms; log the ones that make the menu stutter and where the time went
         OSTime frameEnd = OSGetTime();
         if (OSTicksToMilliseconds(frameEnd - frameStart) > 20) {
-            DEBUG_FUNCTION_LINE("Slow frame: %lld ms (process %lld, input %lld, draw %lld)", OSTicksToMilliseconds(frameEnd - frameStart),
+            DEBUG_FUNCTION_LINE("Slow frame: %lld ms (process %lld, input %lld, GamePad %lld, TV %lld, TV done %lld)", OSTicksToMilliseconds(frameEnd - frameStart),
                                 OSTicksToMilliseconds(processDone - frameStart), OSTicksToMilliseconds(inputDone - processDone),
-                                OSTicksToMilliseconds(frameEnd - inputDone));
+                                OSTicksToMilliseconds(drcDone - inputDone), OSTicksToMilliseconds(tvDrawn - drcDone), OSTicksToMilliseconds(frameEnd - tvDrawn));
         }
 
         video->waitForVSync();

@@ -1273,6 +1273,9 @@ void GuiIconGrid::updateButtonPositions() {
 }
 
 void GuiIconGrid::draw(CVideo *pVideo) {
+    if (!isVisible()) {
+        return; // the TV grid while the TV shows the game info
+    }
     //! the BG needs to be rendered to stencil
     pVideo->setStencilRender(true);
     backgroundImage->draw(pVideo);
