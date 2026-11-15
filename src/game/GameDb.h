@@ -10,7 +10,8 @@
  *
  * A worker thread downloads the Wii U database once (wiiutdb.zip, in the console language),
  * keeps only the installed games in sd:/wiiu/launchiine/gamedb.txt and downloads covers on
- * demand to sd:/wiiu/launchiine/covers/<ID>.jpg. A wiiutdb.zip copied to
+ * demand to sd:/wiiu/launchiine/covers/<ID>.tga (decoded and scaled once, so showing a cover
+ * does not stall the menu). A wiiutdb.zip copied to
  * sd:/wiiu/launchiine/ by hand is used as well.
  */
 namespace GameDb {
@@ -36,8 +37,13 @@ namespace GameDb {
     //! false while the info is unknown (not downloaded yet / not in the database)
     bool get(const std::string &id, Info &out);
 
-    //! path of the downloaded cover, empty when there is none (yet); asks the worker for it
-    std::string coverPath(const std::string &id);
+    //! Asks the worker for the cover of this game (only the latest request counts).
+    void requestCover(const std::string &id);
+
+    enum class CoverState { Pending, Ready, None };
+    //! Result of requestCover: Ready fills tga (an uncompressed TGA, cheap to turn into a
+    //! texture), None when the game has no cover. Render thread.
+    CoverState takeCover(const std::string &id, std::vector<uint8_t> &tga);
 
     //! changes whenever new info or a new cover arrived
     uint32_t generation();

@@ -4,6 +4,7 @@
 #include <gui/GuiImage.h>
 #include <gui/GuiImageData.h>
 #include <gui/GuiText.h>
+#include "gui/GameIcon.h"
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,12 +32,10 @@ private:
 
     GuiImageData *backgroundData = nullptr;
     GuiImage *background         = nullptr;
-    GuiImageData *tileData       = nullptr;
-    GuiImage *tile               = nullptr;
 
     GuiImageData *coverData = nullptr;
     GuiImage *coverImage    = nullptr;
-    GuiImage *iconImage     = nullptr;
+    GameIcon *iconImage     = nullptr; // when there is no cover: the icon, rounded like on the grid
     //! textures the GPU may still read from the last frames, freed a bit later
     std::vector<std::pair<GuiImageData *, int32_t>> oldData;
     std::vector<GuiImage *> oldImages;
@@ -52,6 +51,7 @@ private:
     GuiImageData *icon       = nullptr;
     uint32_t seenGeneration  = 0;
     int32_t framesSinceShown = 0;
+    void showIcon(bool show);
     bool coverLoaded         = false;
     bool hasInfo             = false;
 };

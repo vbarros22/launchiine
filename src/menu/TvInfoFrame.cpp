@@ -1,11 +1,9 @@
 #include "TvInfoFrame.h"
-#include "fs/FSUtils.h"
 #include "game/GameDb.h"
 #include "resources/Resources.h"
 #include "utils/AsyncExecutor.h"
 #include "utils/logger.h"
 #include <algorithm>
-#include <malloc.h>
 
 namespace {
     //! layout units (1280x720, origin in the middle)
@@ -15,8 +13,8 @@ namespace {
     constexpr float TEXT_LEFT   = -70.0f; // left edge of the text column
     constexpr int32_t TEXT_W    = 650;
     constexpr float TEXT_TOP    = 110.0f; // from the top of the screen
-    //! wait until the selection rests before decoding a cover (a large JPEG takes a moment)
-    constexpr int32_t COVER_DELAY_FRAMES = 12;
+    //! a cover usually arrives within a few frames; show the icon when it takes longer
+    constexpr int32_t ICON_AFTER_FRAMES = 45;
 
     std::string singleLine(const std::string &in) {
         std::string out = in;
@@ -37,12 +35,6 @@ TvInfoFrame::TvInfoFrame(int32_t w, int32_t h)
     background->setScaleY((float) h / background->getHeight());
     append(background);
 
-    tileData = Resources::GetImageData("tile.png");
-    tile     = new GuiImage(tileData);
-    tile->setPosition(COVER_X, 0);
-    tile->setVisible(false);
-    append(tile);
-
     float textX = TEXT_LEFT + w * 0.5f; // offset from the left edge
     for (auto *text : {&titleText, &metaText, &synopsisText}) {
         text->setAlignment(ALIGN_LEFT | ALIGN_TOP);
@@ -62,11 +54,8 @@ TvInfoFrame::TvInfoFrame(int32_t w, int32_t h)
 
 TvInfoFrame::~TvInfoFrame() {
     remove(background);
-    remove(tile);
     delete background;
-    delete tile;
     Resources::RemoveImageData(backgroundData);
-    Resources::RemoveImageData(tileData);
     if (coverImage != nullptr) {
         remove(coverImage);
         delete coverImage;
@@ -112,32 +101,43 @@ void TvInfoFrame::setCover(GuiImageData *data) {
     append(coverImage);
 }
 
+void TvInfoFrame::showIcon(bool show) {
+    if (iconImage != nullptr) {
+        iconImage->setVisible(show);
+    }
+}
+
 void TvInfoFrame::showTitle(uint64_t id, const std::string &titleName, const std::string &dbId, GuiImageData *titleIcon) {
     if (id == titleId && dbId == gameDbId && titleIcon == icon && titleName == name) {
         return;
     }
+    bool sameTitle   = id == titleId && dbId == gameDbId;
     titleId          = id;
     name             = titleName;
     gameDbId         = dbId;
     icon             = titleIcon;
-    framesSinceShown = 0;
-    coverLoaded      = false;
-    setCover(nullptr);
+    if (!sameTitle) {
+        framesSinceShown = 0;
+        coverLoaded      = false;
+        setCover(nullptr);
+        if (!gameDbId.empty()) {
+            GameDb::requestCover(gameDbId);
+        }
+    }
 
-    //! until a cover is there: the icon on a tile
     if (iconImage != nullptr) {
         remove(iconImage);
         AsyncExecutor::pushForDelete(iconImage);
         iconImage = nullptr;
     }
     if (icon != nullptr) {
-        iconImage = new GuiImage(icon);
+        iconImage = new GameIcon(icon);
         iconImage->setScale(300.0f / std::max(1.0f, (float) iconImage->getWidth()));
         iconImage->setPosition(COVER_X, 0);
         append(iconImage);
+        //! games: wait a moment for the cover instead of flashing the icon
+        showIcon(!coverLoaded && (gameDbId.empty() || framesSinceShown >= ICON_AFTER_FRAMES));
     }
-    tile->setScale(300.0f / 246.0f); // the tile texture fits an icon of ~246 px
-    tile->setVisible(icon != nullptr);
     refreshText();
 }
 
@@ -184,31 +184,20 @@ void TvInfoFrame::process() {
     if (generation != seenGeneration) {
         seenGeneration = generation;
         refreshText();
-        if (!coverLoaded) {
-            framesSinceShown = std::min(framesSinceShown, COVER_DELAY_FRAMES - 1); // try the cover again
-        }
     }
 
-    if (framesSinceShown < COVER_DELAY_FRAMES) {
+    if (!coverLoaded && !gameDbId.empty()) {
         framesSinceShown++;
-        if (framesSinceShown == COVER_DELAY_FRAMES && !coverLoaded && !gameDbId.empty()) {
-            std::string path = GameDb::coverPath(gameDbId);
-            if (!path.empty()) {
-                uint8_t *buffer = nullptr;
-                uint32_t size   = 0;
-                if (FSUtils::LoadFileToMem(path.c_str(), &buffer, &size) > 0 && buffer != nullptr) {
-                    setCover(new GuiImageData(buffer, size));
-                    free(buffer);
-                    coverLoaded = coverImage != nullptr;
-                    if (coverLoaded) {
-                        if (iconImage != nullptr) {
-                            iconImage->setVisible(false);
-                        }
-                        tile->setVisible(false);
-                        creditText.setVisible(true);
-                    }
-                }
-            }
+        std::vector<uint8_t> tga;
+        auto state = GameDb::takeCover(gameDbId, tga);
+        if (state == GameDb::CoverState::Ready) {
+            //! uncompressed TGA prepared by the worker: no JPEG decoding on this thread
+            setCover(new GuiImageData(tga.data(), (int32_t) tga.size()));
+            coverLoaded = coverImage != nullptr;
+            showIcon(!coverLoaded);
+            creditText.setVisible(hasInfo || coverLoaded);
+        } else if (state == GameDb::CoverState::None || framesSinceShown == ICON_AFTER_FRAMES) {
+            showIcon(true);
         }
     }
     GuiFrame::process();
