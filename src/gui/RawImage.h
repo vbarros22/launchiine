@@ -5,7 +5,7 @@
 #include <gx2/texture.h>
 
 /**
- * Image made directly from RGB565 pixels: a row copy into a GX2 texture, no image decoding
+ * Image made directly from RGB565 pixels (expanded to an RGBA8 texture), no image decoding
  * on the render thread (GuiImageData converts every pixel through libgd, which stalls the
  * menu for large pictures like covers). Create, draw and delete on the render thread; delete
  * through AsyncExecutor::pushForDelete so the GPU is done with the texture.

@@ -1,5 +1,4 @@
 #include "RawImage.h"
-#include <cstring>
 #include <gui/video/CVideo.h>
 #include <gui/video/shaders/Texture2DShader.h>
 #include <gx2/mem.h>
@@ -8,7 +7,9 @@
 RawImage::RawImage(uint32_t w, uint32_t h, const uint16_t *rgb565) : GuiElement() {
     width  = w;
     height = h;
-    GX2InitTexture(&texture, w, h, 1, 0, GX2_SURFACE_FORMAT_UNORM_R5_G6_B5, GX2_SURFACE_DIM_TEXTURE_2D, GX2_TILE_MODE_LINEAR_ALIGNED);
+    //! RGBA8 like GuiImageData (the RGB565 texture format came out with mixed up colors);
+    //! the pixels are stored as RGB565 to keep files and memory small
+    GX2InitTexture(&texture, w, h, 1, 0, GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8, GX2_SURFACE_DIM_TEXTURE_2D, GX2_TILE_MODE_LINEAR_ALIGNED);
     if (texture.surface.imageSize == 0) {
         return;
     }
@@ -16,10 +17,15 @@ RawImage::RawImage(uint32_t w, uint32_t h, const uint16_t *rgb565) : GuiElement(
     if (texture.surface.image == nullptr) {
         return;
     }
-    //! the GPU rows are padded to the pitch
-    auto *dst = (uint16_t *) texture.surface.image;
+    auto *dst = (uint32_t *) texture.surface.image;
     for (uint32_t y = 0; y < h; y++) {
-        memcpy(dst + y * texture.surface.pitch, rgb565 + y * w, w * sizeof(uint16_t));
+        uint32_t *row       = dst + y * texture.surface.pitch;
+        const uint16_t *src = rgb565 + y * w;
+        for (uint32_t x = 0; x < w; x++) {
+            uint16_t c = src[x];
+            uint32_t r = (c >> 11) & 0x1F, g = (c >> 5) & 0x3F, b = c & 0x1F;
+            row[x]     = (((r << 3) | (r >> 2)) << 24) | (((g << 2) | (g >> 4)) << 16) | (((b << 3) | (b >> 2)) << 8) | 0xFF;
+        }
     }
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, texture.surface.image, texture.surface.imageSize);
     GX2InitSampler(&sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_LINEAR);
