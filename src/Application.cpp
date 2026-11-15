@@ -110,8 +110,6 @@ void Application::fadeOut() {
 
         fadeOut.setAlpha(i / 255.0f);
 
-        OSTime inputDone = OSGetTime();
-
         //! start rendering DRC
         video->prepareDrcRendering();
         mainWindow->drawDrc(video);
@@ -241,6 +239,7 @@ void Application::executeThread() {
             //! update controller states
             mainWindow->update(i);
         }
+        OSTime inputDone = OSGetTime();
 
         //! start rendering DRC
         video->prepareDrcRendering();
