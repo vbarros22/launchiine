@@ -39,7 +39,7 @@ The original was published as an unfinished work in progress; this fork picks it
 - **Fast start:** names and icons are cached on the SD card; the menu is complete in well under a second.
 - The menu opens on the last started title (inside its folder if needed).
 - Names follow the console language.
-- ZL (or the settings tab) opens a small menu: System Settings or the **original Wii U Menu**.
+- ZL opens a small menu: System Settings or the **original Wii U Menu**.
   The original menu needs the included `launchiine_helper.wps` plugin (in `wiiu/environments/aroma/plugins/`):
   launchiine steps aside for one start of the menu and the plugin brings it back right after,
   so the next time the menu starts it is launchiine again.

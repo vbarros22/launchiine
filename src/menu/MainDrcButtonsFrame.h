@@ -31,10 +31,9 @@ public:
           settingsTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZL, true), switchLayoutTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_ZR, true),
           plusTrigger(GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_PLUS, true),
           hintText("A Open  B Back  Y Move / New folder  + Search  X Screens  - User  L/R Pages  ZL Menu", 22, glm::vec4(0.3f, 0.32f, 0.34f, 1.0f)) {
+        //! no tab on screen anymore (the corner belongs to the Mii, like in the Wii U Menu):
+        //! only ZL opens the menu
         settingsButton.setClickable(true);
-        settingsButton.setImage(&settingsIcon);
-        settingsButton.setTrigger(&touchTrigger);
-        settingsButton.setTrigger(&wpadTouchTrigger);
         settingsButton.setTrigger(&settingsTrigger);
         settingsButton.setAlignment(ALIGN_LEFT | ALIGN_TOP);
         settingsButton.setSoundClick(buttonClickSound);

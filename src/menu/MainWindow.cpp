@@ -94,10 +94,10 @@ void MainWindow::setupUserButton() {
         }
     }
 
-    //! top left next to the settings tab, like the Wii U Menu (top right: switch screens);
+    //! top left corner, like the Wii U Menu (top right: switch screens);
     //! the minus button opens the user picker as well (see update)
     userButton->setAlignment(ALIGN_LEFT | ALIGN_TOP);
-    userButton->setPosition(128, -4);
+    userButton->setPosition(16, -6);
     userButton->setTrigger(&userTouchTrigger);
     userButton->setTrigger(&userWpadTrigger);
     userButton->setEffectGrow();

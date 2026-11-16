@@ -21,7 +21,7 @@ Extract the `launchiine-*.zip` of this release to the root of the SD card (or co
 - **Game update notice:** launchiine checks Nintendo's version list (like the Wii U Menu does) and marks titles with a newer update with an orange badge and *Update available*. It only tells; updating still happens through the original menu / System Settings.
 - **Icon cache:** icons are cached on the SD card, the menu shows all icons in a fraction of a second after the first start.
 - Touch: tap an icon to select it, tap the selected icon to open it.
-- **Original Wii U Menu:** ZL (or the settings tab) → *Original Wii U Menu* starts Nintendo's menu once; the included `launchiine_helper.wps` plugin brings launchiine back for the next start.
+- **Original Wii U Menu:** ZL → *Original Wii U Menu* starts Nintendo's menu once; the included `launchiine_helper.wps` plugin brings launchiine back for the next start.
 
 ### Known limitations
 - No splash screen sound, no menu music from the original menu.
