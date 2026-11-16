@@ -10,6 +10,7 @@
 #include <cstring>
 #include <ctime>
 #include <curl/curl.h>
+#include <algorithm>
 #include <deque>
 #include <functional>
 #include <gd.h>
@@ -24,7 +25,7 @@
 namespace {
     constexpr const char *DIR_PATH     = "fs:/vol/external01/wiiu/launchiine";
     constexpr const char *COVER_DIR    = "fs:/vol/external01/wiiu/launchiine/covers";
-    constexpr const char *CACHE_FILE   = "fs:/vol/external01/wiiu/launchiine/gamedb3.txt";
+    constexpr const char *CACHE_FILE   = "fs:/vol/external01/wiiu/launchiine/gamedb4.txt";
     constexpr const char *MANUAL_ZIP   = "fs:/vol/external01/wiiu/launchiine/wiiutdb.zip";
     constexpr const char *DB_URL       = "http://www.gametdb.com/wiiutdb.zip?LANG=";
     constexpr const char *COVER_URL    = "http://art.gametdb.com/wiiu/";
@@ -429,6 +430,37 @@ namespace {
         return out;
     }
 
+    //! words of a name, lower case, letters and digits only
+    std::vector<std::string> nameWords(const std::string &in) {
+        std::vector<std::string> words;
+        std::string word;
+        for (unsigned char c : in + " ") {
+            if (isalnum(c)) {
+                word += (char) tolower(c);
+            } else if (!word.empty()) {
+                if (word.size() >= 2 || isdigit((unsigned char) word[0])) {
+                    words.push_back(word);
+                }
+                word.clear();
+            }
+        }
+        return words;
+    }
+
+    //! Does the GameTDB title fit our name? Injects carry the product code of the Wii U title
+    //! they were built from, so a match by code can be a completely different game.
+    bool namesFit(const std::string &ours, const std::string &theirs) {
+        auto a = nameWords(ours), b = nameWords(theirs);
+        if (a.empty() || b.empty()) {
+            return true; // nothing to compare
+        }
+        int common = 0;
+        for (auto &w : a) {
+            common += std::find(b.begin(), b.end(), w) != b.end();
+        }
+        return common * 2 >= (int) a.size();
+    }
+
     //! when a name matches several releases: US, then Europe, then the rest
     int regionRank(const std::string &tdbId) {
         char r = tdbId.size() >= 4 ? tdbId[3] : '?';
@@ -519,6 +551,9 @@ namespace {
         if (names.empty() || stopRequested) {
             return;
         }
+        for (auto &n : names) {
+            DEBUG_FUNCTION_LINE("Looking for \"%s\" (%s) in the Wii/GameCube database", wantedNames[n.second].c_str(), n.first.c_str());
+        }
         std::string zip;
         if (!download(WII_DB_URL, zip)) {
             return;
@@ -561,6 +596,7 @@ namespace {
         }
         size_t pos               = 0;
         int found                = 0;
+        std::set<std::string> rejected;
         std::string localeWanted = std::string("<locale lang=\"") + lang + "\">";
         while ((pos = xml.find("<game ", pos)) != std::string::npos) {
             size_t end = xml.find("</game>", pos);
@@ -573,7 +609,19 @@ namespace {
                 ours = tdbId;
             } else if (tdbId.size() == 4 && shortIds.count(tdbId) != 0) {
                 ours = shortIds[tdbId];
-            } else if (!names.empty()) {
+            }
+            if (!ours.empty() && !names.empty()) {
+                //! English pass: the code must also fit the name, or it is an inject
+                size_t en = xml.find("<locale lang=\"EN\">", pos);
+                std::string title = en != std::string::npos && en < end ? tagText(xml, "title", en, xml.find("</locale>", en)) : "";
+                auto ourName      = wantedNames.find(ours);
+                if (ourName != wantedNames.end() && !namesFit(ourName->second, title)) {
+                    DEBUG_FUNCTION_LINE("%s: \"%s\" is not \"%s\", looking it up by name", ours.c_str(), ourName->second.c_str(), title.c_str());
+                    rejected.insert(ours);
+                    ours.clear();
+                }
+            }
+            if (ours.empty() && !names.empty()) {
                 //! not found by its code (e.g. an inject): by its English name
                 size_t en = xml.find("<locale lang=\"EN\">", pos);
                 if (en != std::string::npos && en < end) {
@@ -650,6 +698,9 @@ namespace {
         out.swap(english);
         matchWiiByName(out);
         for (auto &x : local) {
+            if (out.count(x.first) == 0) {
+                continue; // e.g. an inject: its code points at another game
+            }
             GameDb::Info &target = out[x.first];
             const GameDb::Info &l = x.second;
             for (auto field : {&GameDb::Info::title, &GameDb::Info::synopsis, &GameDb::Info::developer, &GameDb::Info::publisher,

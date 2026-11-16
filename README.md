@@ -80,7 +80,7 @@ Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
 - `lastTitle.txt` – last started title
 - `folders.txt` – your folders, their colors and which titles were moved
 - `restore-men.txt` – only exists for a moment while the original Wii U Menu starts
-- `gamedb3.txt` – GameTDB info of your games (rebuilt automatically)
+- `gamedb4.txt` – GameTDB info of your games (rebuilt automatically)
 - `covers/` – downloaded covers (about 600 KB each)
 - `wiiutdb.zip` – optional: the GameTDB database copied by hand, if the console cannot download it
 

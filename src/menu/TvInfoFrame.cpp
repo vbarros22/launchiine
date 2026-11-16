@@ -296,6 +296,8 @@ void TvInfoFrame::draw(CVideo *pVideo) {
         return;
     }
     video = pVideo;
+    //! the background must not write depth: the icon (a 3D model) is drawn behind z = 0
+    GX2SetDepthOnlyControl(GX2_DISABLE, GX2_DISABLE, GX2_COMPARE_FUNC_ALWAYS);
     if (layerValid) {
         drawStaticLayer(pVideo);
     } else {
@@ -308,5 +310,6 @@ void TvInfoFrame::draw(CVideo *pVideo) {
             creditText.draw(pVideo);
         }
     }
+    GX2SetDepthOnlyControl(GX2_ENABLE, GX2_ENABLE, GX2_COMPARE_FUNC_LEQUAL);
     GuiFrame::draw(pVideo); // cover / icon
 }
