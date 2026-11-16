@@ -27,6 +27,7 @@
 #include <gui/Gui.h>
 #include <future>
 #include <queue>
+#include <map>
 #include <vector>
 
 class CVideo;
@@ -248,6 +249,7 @@ private:
     class TvInfoFrame *tvInfo        = nullptr;
     bool tvInfoEnabled               = true;
     bool gameDbStarted               = false;
+    std::map<uint64_t, std::string> gameDbKeys; // title -> GameTDB key (games only)
     int32_t loaderDoneFrames         = 0;
     int64_t prefetchKey              = -1; // display order version and page of the last cover prefetch
     void updateTvInfo(uint64_t titleId);

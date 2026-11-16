@@ -287,17 +287,38 @@ void MainWindow::process() {
     if (!gameDbStarted && gameList.isFirstPassDone()) {
         if (++loaderDoneFrames > 10) { // let the events of the first pass reach the list
             gameDbStarted = true;
-            std::vector<std::string> ids;
+            //! games only (00050000, demos 00050002): homebrew and system apps never have GameTDB
+            //! data, the TV shows their icon right away. Titles sharing a product code (injects
+            //! built from the same base) get their own key and are found by name.
+            std::map<std::string, int> uses;
+            std::vector<std::pair<uint64_t, std::string>> candidates;
+            std::map<uint64_t, std::string> names;
             gameList.lock();
             for (auto *info : gameList.getFullGameList()) {
+                uint32_t type = (uint32_t) (info->titleId >> 32);
+                if (type != 0x00050000 && type != 0x00050002) {
+                    continue;
+                }
                 std::string id = GameDb::idFromProductCode(info->productCode);
+                candidates.emplace_back(info->titleId, id);
+                names[info->titleId] = info->longName.empty() ? info->name : info->longName;
                 if (!id.empty()) {
-                    ids.push_back(id);
+                    uses[id]++;
                 }
             }
             gameList.unlock();
-            DEBUG_FUNCTION_LINE("GameTDB: %d games with an id", (int) ids.size());
-            GameDb::start(ids);
+            std::vector<std::pair<std::string, std::string>> games;
+            char key[24];
+            for (auto &c : candidates) {
+                if (c.second.empty() || uses[c.second] > 1) {
+                    snprintf(key, sizeof(key), "T%016llX", (unsigned long long) c.first);
+                    c.second = key;
+                }
+                gameDbKeys[c.first] = c.second;
+                games.emplace_back(c.second, names[c.first]);
+            }
+            DEBUG_FUNCTION_LINE("GameTDB: %d games", (int) games.size());
+            GameDb::start(games);
         }
     }
     if (tvInfo != nullptr && currentTvFrame != nullptr) {
@@ -654,7 +675,8 @@ void MainWindow::updateTvInfo(uint64_t titleId) {
         gameInfo *info = gameList.getGameInfo(titleId);
         if (info != nullptr) {
             name = info->longName.empty() ? info->name : info->longName;
-            dbId = GameDb::idFromProductCode(info->productCode);
+            auto key = gameDbKeys.find(titleId);
+            dbId     = key != gameDbKeys.end() ? key->second : "";
             icon = info->imageData;
         }
     }
@@ -672,8 +694,8 @@ void MainWindow::updateTvInfo(uint64_t titleId) {
             std::vector<std::string> ids;
             for (int32_t p : {page, page + 1, page - 1}) {
                 for (int32_t i = p * PER_PAGE; i >= 0 && i < (p + 1) * PER_PAGE && i < (int32_t) order.size(); i++) {
-                    gameInfo *info = gameList.getGameInfo(order[i]);
-                    std::string id = info != nullptr ? GameDb::idFromProductCode(info->productCode) : "";
+                    auto key       = gameDbKeys.find(order[i]);
+                    std::string id = key != gameDbKeys.end() ? key->second : "";
                     if (!id.empty()) {
                         ids.push_back(id);
                     }

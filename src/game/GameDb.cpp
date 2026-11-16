@@ -11,6 +11,7 @@
 #include <ctime>
 #include <curl/curl.h>
 #include <deque>
+#include <functional>
 #include <gd.h>
 #include <future>
 #include <map>
@@ -23,10 +24,13 @@
 namespace {
     constexpr const char *DIR_PATH     = "fs:/vol/external01/wiiu/launchiine";
     constexpr const char *COVER_DIR    = "fs:/vol/external01/wiiu/launchiine/covers";
-    constexpr const char *CACHE_FILE   = "fs:/vol/external01/wiiu/launchiine/gamedb2.txt";
+    constexpr const char *CACHE_FILE   = "fs:/vol/external01/wiiu/launchiine/gamedb3.txt";
     constexpr const char *MANUAL_ZIP   = "fs:/vol/external01/wiiu/launchiine/wiiutdb.zip";
     constexpr const char *DB_URL       = "http://www.gametdb.com/wiiutdb.zip?LANG=";
     constexpr const char *COVER_URL    = "http://art.gametdb.com/wiiu/";
+    //! Wii and GameCube games, for injects (Virtual Console titles made from a Wii/GC game)
+    constexpr const char *WII_DB_URL    = "http://www.gametdb.com/wiitdb.zip?LANG=EN";
+    constexpr const char *WII_COVER_URL = "http://art.gametdb.com/wii/";
     //! the database changes slowly; look again for missing games after a week
     constexpr int64_t RECHECK_SECONDS = 7 * 24 * 60 * 60;
 
@@ -34,6 +38,7 @@ namespace {
     std::condition_variable wake;
     std::map<std::string, GameDb::Info> infos;
     std::set<std::string> wantedIds;
+    std::map<std::string, std::string> wantedNames; // key -> title name (matched when the id is unknown)
     //! covers in memory, the most recently used at the back
     constexpr size_t COVER_CACHE_SIZE = 40;
     std::deque<std::pair<std::string, std::shared_ptr<const GameDb::Cover>>> coverCache;
@@ -52,7 +57,8 @@ namespace {
     //! JPEG -> RGB565 at most COVER_MAX_W wide. File: "LCV1", width, height (u16), pixels.
     constexpr int COVER_MAX_W = 480;
     std::shared_ptr<GameDb::Cover> jpegToCover(const std::string &jpeg) {
-        gdImagePtr src = gdImageCreateFromJpegPtr((int) jpeg.size(), (void *) jpeg.data());
+        bool png       = jpeg.size() > 4 && (uint8_t) jpeg[0] == 0x89 && jpeg[1] == 'P';
+        gdImagePtr src = png ? gdImageCreateFromPngPtr((int) jpeg.size(), (void *) jpeg.data()) : gdImageCreateFromJpegPtr((int) jpeg.size(), (void *) jpeg.data());
         if (src == nullptr) {
             return nullptr;
         }
@@ -409,9 +415,145 @@ namespace {
         return b == std::string::npos ? "" : xml.substr(a, b - a);
     }
 
+    //! "Resident Evil™ 2" -> "residentevil2": names compared without case, symbols and spaces
+    std::string normalizeName(const std::string &in) {
+        std::string out;
+        for (unsigned char c : in) {
+            if (isalnum(c)) {
+                out += (char) tolower(c);
+            }
+        }
+        if (out.rfind("the", 0) == 0 && out.size() > 6) {
+            out = out.substr(3);
+        }
+        return out;
+    }
+
+    //! when a name matches several releases: US, then Europe, then the rest
+    int regionRank(const std::string &tdbId) {
+        char r = tdbId.size() >= 4 ? tdbId[3] : '?';
+        return r == 'E' ? 3 : r == 'P' ? 2 : r == 'J' ? 1 : 0;
+    }
+
+    //! name -> key for the games still without info
+    std::map<std::string, std::string> namesToMatch(const std::map<std::string, GameDb::Info> &known) {
+        std::map<std::string, std::string> names;
+        for (auto &x : wantedNames) {
+            std::string n = normalizeName(x.second);
+            if (known.count(x.first) == 0 && n.size() >= 4) {
+                names.emplace(n, x.first);
+            }
+        }
+        return names;
+    }
+
+    //! Unpacks the first file of a zip piece by piece and hands every <game>..</game> block
+    //! over; the Wii database is too large to unpack into memory at once.
+    bool forEachGameInZip(const std::string &zip, const std::function<void(const std::string &)> &onGame) {
+        auto u16 = [&](size_t p) { return (uint32_t) (uint8_t) zip[p] | ((uint32_t) (uint8_t) zip[p + 1] << 8); };
+        auto u32 = [&](size_t p) { return u16(p) | (u16(p + 2) << 16); };
+        if (zip.size() < 30 || u32(0) != 0x04034b50 || u16(8) != 8) {
+            return false;
+        }
+        size_t data = 30 + u16(26) + u16(28);
+        if (data >= zip.size()) {
+            return false;
+        }
+        z_stream stream{};
+        if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) {
+            return false;
+        }
+        stream.next_in  = (Bytef *) zip.data() + data;
+        stream.avail_in = zip.size() - data;
+        std::vector<char> chunk(256 * 1024);
+        std::string pending;
+        int res = Z_OK;
+        while (res == Z_OK && !stopRequested) {
+            stream.next_out  = (Bytef *) chunk.data();
+            stream.avail_out = chunk.size();
+            res              = inflate(&stream, Z_NO_FLUSH);
+            if (res != Z_OK && res != Z_STREAM_END) {
+                break;
+            }
+            pending.append(chunk.data(), chunk.size() - stream.avail_out);
+            size_t pos = 0;
+            while (true) {
+                size_t start = pending.find("<game ", pos);
+                if (start == std::string::npos) {
+                    break;
+                }
+                size_t end = pending.find("</game>", start);
+                if (end == std::string::npos) {
+                    pos = start;
+                    break;
+                }
+                onGame(pending.substr(start, end + 7 - start));
+                pos = end + 7;
+            }
+            pending.erase(0, pos);
+        }
+        inflateEnd(&stream);
+        return res == Z_STREAM_END;
+    }
+
+    GameDb::Info readGame(const std::string &xml, size_t pos, size_t end, const std::string &localeTag) {
+        GameDb::Info info;
+        size_t locale = xml.find(localeTag, pos);
+        if (locale != std::string::npos && locale < end) {
+            size_t localeEnd = xml.find("</locale>", locale);
+            info.title       = tagText(xml, "title", locale, localeEnd);
+            info.synopsis    = tagText(xml, "synopsis", locale, localeEnd);
+        }
+        info.developer = tagText(xml, "developer", pos, end);
+        info.publisher = tagText(xml, "publisher", pos, end);
+        info.year      = tagAttribute(xml, "date", "year", pos, end);
+        info.genre     = tagText(xml, "genre", pos, end);
+        info.players   = tagAttribute(xml, "input", "players", pos, end);
+        return info;
+    }
+
+    //! injects: their product code is the one of the Wii U title they were built from, so
+    //! they are found by name in the Wii / GameCube database
+    void matchWiiByName(std::map<std::string, GameDb::Info> &out) {
+        auto names = namesToMatch(out);
+        if (names.empty() || stopRequested) {
+            return;
+        }
+        std::string zip;
+        if (!download(WII_DB_URL, zip)) {
+            return;
+        }
+        std::map<std::string, int> rank;
+        int found = 0;
+        bool ok   = forEachGameInZip(zip, [&](const std::string &game) {
+            size_t end       = game.size();
+            size_t en        = game.find("<locale lang=\"EN\">");
+            std::string name = en == std::string::npos ? "" : tagText(game, "title", en, game.find("</locale>", en));
+            auto match       = names.find(normalizeName(name));
+            if (match == names.end()) {
+                return;
+            }
+            std::string tdbId = tagText(game, "id", 0, end);
+            int r             = regionRank(tdbId);
+            auto previous     = rank.find(match->second);
+            if (previous != rank.end() && previous->second >= r) {
+                return;
+            }
+            rank[match->second] = r;
+            GameDb::Info info   = readGame(game, 0, end, "<locale lang=\"EN\">");
+            info.tdbId          = "wii/" + tdbId;
+            if (previous == rank.end()) {
+                found++;
+            }
+            out[match->second] = info;
+        });
+        DEBUG_FUNCTION_LINE("GameTDB Wii/GameCube: %d of %d found by name%s", found, (int) names.size(), ok ? "" : " (database incomplete)");
+    }
+
     //! Reads the games we want from one database download. The locale is the language of the
     //! download (with LANG=PT the English synopsis is left out, so English is a second pass).
-    void parseDatabase(const std::string &xml, const std::set<std::string> &ids, const char *lang, std::map<std::string, GameDb::Info> &out) {
+    void parseDatabase(const std::string &xml, const std::set<std::string> &ids, const char *lang, std::map<std::string, GameDb::Info> &out,
+                       const std::map<std::string, std::string> &names = {}) {
         //! eShop games are listed with 4 characters only ("BMTE" for our "BMTETL")
         std::map<std::string, std::string> shortIds;
         for (auto &id : ids) {
@@ -431,6 +573,15 @@ namespace {
                 ours = tdbId;
             } else if (tdbId.size() == 4 && shortIds.count(tdbId) != 0) {
                 ours = shortIds[tdbId];
+            } else if (!names.empty()) {
+                //! not found by its code (e.g. an inject): by its English name
+                size_t en = xml.find("<locale lang=\"EN\">", pos);
+                if (en != std::string::npos && en < end) {
+                    auto match = names.find(normalizeName(tagText(xml, "title", en, xml.find("</locale>", en))));
+                    if (match != names.end() && out.count(match->second) == 0) {
+                        ours = match->second;
+                    }
+                }
             }
             if (!ours.empty()) {
                 GameDb::Info info;
@@ -472,7 +623,13 @@ namespace {
         }
         zip.clear();
         zip.shrink_to_fit();
-        parseDatabase(xml, ids, lang, out);
+        //! by name only in the English pass (the names of the titles are compared with it)
+        std::map<std::string, std::string> names;
+        if (strcmp(lang, "EN") == 0) {
+            std::map<std::string, GameDb::Info> none;
+            names = namesToMatch(none); // a match by id later in the file still wins
+        }
+        parseDatabase(xml, ids, lang, out, names);
         return true;
     }
 
@@ -485,11 +642,13 @@ namespace {
         }
         if (lang == "EN" || stopRequested) {
             out.swap(english);
+            matchWiiByName(out);
             return true;
         }
         std::map<std::string, GameDb::Info> local;
         readDatabase(lang.c_str(), ids, local); // without it English is still fine
         out.swap(english);
+        matchWiiByName(out);
         for (auto &x : local) {
             GameDb::Info &target = out[x.first];
             const GameDb::Info &l = x.second;
@@ -504,7 +663,10 @@ namespace {
     }
 
     //! front cover, by region of the id (4th letter), larger first
-    std::shared_ptr<GameDb::Cover> downloadCover(const std::string &id, const std::string &savePath) {
+    std::shared_ptr<GameDb::Cover> downloadCover(const std::string &fullId, const std::string &savePath) {
+        //! "wii/G2RE08": a Wii / GameCube cover (PNG), otherwise a Wii U one (JPEG)
+        bool wii       = fullId.rfind("wii/", 0) == 0;
+        std::string id = wii ? fullId.substr(4) : fullId;
         char region = id.size() >= 4 ? id[3] : 'E';
         std::vector<std::string> regions;
         if (region == 'J') {
@@ -520,7 +682,7 @@ namespace {
                     return nullptr;
                 }
                 std::string data;
-                if (download(std::string(COVER_URL) + kind + "/" + r + "/" + id + ".jpg", data)) {
+                if (download(std::string(wii ? WII_COVER_URL : COVER_URL) + kind + "/" + r + "/" + id + (wii ? ".png" : ".jpg"), data)) {
                     auto cover = jpegToCover(data);
                     if (cover == nullptr) {
                         DEBUG_FUNCTION_LINE("Could not decode the cover of %s", id.c_str());
@@ -648,16 +810,18 @@ std::string GameDb::idFromProductCode(const std::string &productCode) {
     return product + company;
 }
 
-void GameDb::start(const std::vector<std::string> &ids) {
+void GameDb::start(const std::vector<std::pair<std::string, std::string>> &games) {
     if (worker.valid()) {
         return;
     }
     {
         std::lock_guard<std::mutex> guard(lock);
         wantedIds.clear();
-        for (auto &id : ids) {
-            if (!id.empty()) {
-                wantedIds.insert(id);
+        wantedNames.clear();
+        for (auto &game : games) {
+            if (!game.first.empty()) {
+                wantedIds.insert(game.first);
+                wantedNames[game.first] = game.second;
             }
         }
     }

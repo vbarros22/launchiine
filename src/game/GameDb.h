@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 /**
@@ -30,8 +31,10 @@ namespace GameDb {
     //! "WUP-P-AMKE/0001" -> "AMKE01", empty when the product code has no GameTDB id
     std::string idFromProductCode(const std::string &productCode);
 
-    //! Starts the worker for these GameTDB ids. Any thread.
-    void start(const std::vector<std::string> &ids);
+    //! Starts the worker for these games: (key, name). The key is the GameTDB id from the
+    //! product code (or any unique key); games not found by it are looked up by name, in the
+    //! Wii U and then in the Wii / GameCube database (injects). Any thread.
+    void start(const std::vector<std::pair<std::string, std::string>> &games);
 
     //! Asks the worker to stop and waits for it.
     void stop();
