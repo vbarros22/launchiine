@@ -66,7 +66,8 @@ To go back to the original menu, delete (or rename) `men.rpx`.
 | B (or the back tab) | Leave the folder / close a dialog |
 | Y | Move the selected title (to a folder, the main grid or a new folder); on a folder: folder settings |
 | + | Search (empty search shows everything again) |
-| X (or tap the Mii) | Choose the user |
+| X (or the button top right) | Switch screens: icon grid on the TV, game info on the GamePad (remembered) |
+| - (or tap the Mii) | Choose the user |
 | L / R | Previous / next page |
 | ZL | System Settings / original Wii U Menu |
 | ZR | TV: game info or icon grid |

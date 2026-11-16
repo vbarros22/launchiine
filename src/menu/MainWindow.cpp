@@ -94,18 +94,19 @@ void MainWindow::setupUserButton() {
         }
     }
 
-    userButton->setAlignment(ALIGN_RIGHT | ALIGN_TOP);
-    userButton->setPosition(-16, -4);
+    //! top left next to the settings tab, like the Wii U Menu (top right: switch screens);
+    //! the minus button opens the user picker as well (see update)
+    userButton->setAlignment(ALIGN_LEFT | ALIGN_TOP);
+    userButton->setPosition(128, -4);
     userButton->setTrigger(&userTouchTrigger);
     userButton->setTrigger(&userWpadTrigger);
-    userButton->setTrigger(&userXTrigger);
     userButton->setEffectGrow();
     userButton->clicked.connect(this, &MainWindow::OnUserButtonClicked);
     //! alignment is relative to the parent: without a full screen frame the button would
     //! sit in the middle of the screen
     userFrame = new GuiFrame(width, height);
     userFrame->append(userButton);
-    append(userFrame);
+    appendDrc(userFrame);
 }
 
 void MainWindow::OnUserButtonClicked(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
@@ -289,8 +290,9 @@ void MainWindow::process() {
         }
     }
     if (tvInfo != nullptr && currentTvFrame != nullptr) {
-        currentTvFrame->setVisible(!tvInfoEnabled);
-        tvInfo->setVisible(tvInfoEnabled);
+        //! grid on the TV: the info is on the GamePad
+        currentTvFrame->setVisible(gridOnTv || !tvInfoEnabled);
+        tvInfo->setVisible(gridOnTv || tvInfoEnabled);
         if (currentDrcFrame != nullptr) {
             updateTvInfo(currentDrcFrame->getSelectedGame());
         }
@@ -392,6 +394,19 @@ void MainWindow::update(GuiController *controller) {
     //! dont read behind the initial elements in case one was added
     //uint32_t tvSize = tvElements.size();
 
+    //! buttons for every controller (Pro Controller / Wii Remote too, without a GamePad)
+    bool idle = accountFrame == nullptr && listMenu == nullptr && !isKeyboardOpen() && pendingKeyboardFrames == 0 && !launchInProgress && !isInputBlocked();
+    if (idle && currentDrcFrame != nullptr && tvInfo != nullptr) {
+        if (controller->data.buttons_d & GuiTrigger::BUTTON_X) {
+            setGridOnTv(!gridOnTv);
+            return;
+        }
+        if (controller->data.buttons_d & GuiTrigger::BUTTON_MINUS) {
+            openAccountSelect(true);
+            return;
+        }
+    }
+
     if (accountFrame != nullptr) {
         //! the user picker takes all input while it is open
         accountFrame->update(controller);
@@ -402,6 +417,17 @@ void MainWindow::update(GuiController *controller) {
 
         for (uint32_t i = 0; (i < drcSize) && (i < drcElements.size()); ++i) {
             drcElements[i]->update(controller);
+        }
+        //! grid on the TV: the GamePad buttons drive it, touches on the GamePad stay there
+        if (gridOnTv && currentTvFrame != nullptr) {
+            auto *pad              = const_cast<GuiController *>(controller);
+            bool touched           = pad->data.touched;
+            bool validPointer      = pad->data.validPointer;
+            pad->data.touched      = false;
+            pad->data.validPointer = false;
+            currentTvFrame->update(controller);
+            pad->data.touched      = touched;
+            pad->data.validPointer = validPointer;
         }
     } else {
         uint32_t tvSize = tvElements.size();
@@ -524,6 +550,87 @@ void MainWindow::SetupMainView() {
 
     tvInfo = new TvInfoFrame(width, height);
     appendTv(tvInfo);
+
+    setupSwapButton();
+    loadScreenSettings();
+}
+
+namespace {
+    constexpr const char *SCREEN_SETTINGS = "fs:/vol/external01/wiiu/launchiine/screens.txt";
+}
+
+void MainWindow::setupSwapButton() {
+    //! GamePad: round button top right (textures 1.5x)
+    swapData  = Resources::GetImageData("swapButton.png");
+    swapImage = new GuiImage(swapData);
+    swapImage->setScale(1.0f / 1.5f);
+    swapButton = new GuiButton(swapImage->getWidth() / 1.5f, swapImage->getHeight() / 1.5f);
+    swapButton->setImage(swapImage);
+    swapButton->setAlignment(ALIGN_RIGHT | ALIGN_TOP);
+    swapButton->setPosition(-6, 2);
+    swapButton->setTrigger(&swapTouchTrigger);
+    swapButton->setEffectGrow();
+    swapButton->clicked.connect(this, &MainWindow::OnSwapButtonClicked);
+    swapFrame = new GuiFrame(width, height);
+    swapFrame->append(swapButton);
+    appendDrc(swapFrame);
+
+    //! TV: corner piece bottom right while the grid is on the TV (a hint for the X button)
+    swapTvData  = Resources::GetImageData("swapTvCorner.png");
+    swapTvImage = new GuiImage(swapTvData);
+    swapTvImage->setScale(1.0f / 1.5f);
+    swapTvImage->setAlignment(ALIGN_RIGHT | ALIGN_BOTTOM);
+    swapTvFrame = new GuiFrame(width, height);
+    swapTvFrame->append(swapTvImage);
+}
+
+void MainWindow::OnSwapButtonClicked(GuiButton *button, const GuiController *controller, GuiTrigger *trigger) {
+    if (listMenu == nullptr && accountFrame == nullptr && !launchInProgress) {
+        setGridOnTv(!gridOnTv);
+    }
+}
+
+void MainWindow::setGridOnTv(bool onTv) {
+    if (tvInfo == nullptr || currentTvFrame == nullptr || currentDrcFrame == nullptr) {
+        return;
+    }
+    gridOnTv = onTv;
+    if (onTv) {
+        //! TV: the grid and the corner hint. GamePad: the game info under its buttons
+        removeTv(tvInfo);
+        insertDrc(0, tvInfo);
+        removeDrc(currentDrcFrame);
+        appendTv(swapTvFrame);
+    } else {
+        removeDrc(tvInfo);
+        removeTv(swapTvFrame);
+        insertDrc(0, currentDrcFrame);
+        appendTv(tvInfo);
+    }
+    //! the same selection on both grids
+    currentTvFrame->setSelectedGame(currentDrcFrame->getSelectedGame());
+    DEBUG_FUNCTION_LINE("Icon grid on the %s", onTv ? "TV" : "GamePad");
+    saveScreenSettings();
+}
+
+void MainWindow::loadScreenSettings() {
+    uint8_t *buffer = nullptr;
+    uint32_t size   = 0;
+    if (FSUtils::LoadFileToMem(SCREEN_SETTINGS, &buffer, &size) <= 0 || buffer == nullptr) {
+        return;
+    }
+    std::string text((const char *) buffer, size);
+    free(buffer);
+    tvInfoEnabled = text.find("tvInfo=0") == std::string::npos;
+    if (text.find("gridOnTv=1") != std::string::npos) {
+        setGridOnTv(true);
+    }
+}
+
+void MainWindow::saveScreenSettings() {
+    std::string text = std::string("gridOnTv=") + (gridOnTv ? "1" : "0") + "\ntvInfo=" + (tvInfoEnabled ? "1" : "0") + "\n";
+    FSUtils::CreateSubfolder("fs:/vol/external01/wiiu/launchiine");
+    FSUtils::saveBufferToFile(SCREEN_SETTINGS, (void *) text.data(), text.size());
 }
 
 void MainWindow::updateTvInfo(uint64_t titleId) {
@@ -572,7 +679,10 @@ void MainWindow::OnLayoutSwitchClicked(GuiElement *element) {
     }
     //! ZR: TV between the game info and the icon grid
     if (tvInfo != nullptr) {
-        tvInfoEnabled = !tvInfoEnabled;
+        if (!gridOnTv) {
+            tvInfoEnabled = !tvInfoEnabled;
+            saveScreenSettings();
+        }
         return;
     }
 
@@ -634,7 +744,7 @@ void MainWindow::OnLayoutSwitchEffectFinish(GuiElement *element) {
     //! re-append on top
     append(mainSwitchButtonFrame);
     if (userFrame) {
-        append(userFrame);
+        appendDrc(userFrame);
     }
 
     currentTvFrame->resetState();

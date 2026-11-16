@@ -267,6 +267,23 @@ private:
     GuiTrigger userTouchTrigger{GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH};
     GuiTrigger userWpadTrigger{GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A};
     GuiTrigger userXTrigger{GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_X, true};
+
+    //! Like the Wii U Menu: X (or the button) puts the icon grid on the TV and the game info on
+    //! the GamePad, for playing without looking at the GamePad. Remembered on the SD card.
+    bool gridOnTv = false;
+    void setGridOnTv(bool onTv);
+    void loadScreenSettings();
+    void saveScreenSettings();
+    void setupSwapButton();
+    void OnSwapButtonClicked(GuiButton *button, const GuiController *controller, GuiTrigger *trigger);
+    GuiFrame *swapFrame        = nullptr; // GamePad: round button top right
+    GuiButton *swapButton      = nullptr;
+    GuiImageData *swapData     = nullptr;
+    GuiImage *swapImage        = nullptr;
+    GuiFrame *swapTvFrame      = nullptr; // TV, while the grid is there: corner bottom right
+    GuiImageData *swapTvData   = nullptr;
+    GuiImage *swapTvImage      = nullptr;
+    GuiTrigger swapTouchTrigger{GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH};
     bool launchInProgress            = false;
     uint32_t inputCooldown           = 0;
 };
