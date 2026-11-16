@@ -41,9 +41,11 @@ public:
         settingsButton.clicked.connect(this, &MainDrcButtonsFrame::OnSettingsButtonClick);
         append(&settingsButton);
 
-        //! The layout switch (ZR / bottom right icon) only swapped two identical grids
-        //! between TV and GamePad, which looked like a flicker. It stays off until the TV
-        //! gets a view of its own.
+        //! ZR: the TV between the game info and the icon grid (no icon on screen)
+        switchLayoutButton.setClickable(true);
+        switchLayoutButton.setTrigger(&switchLayoutTrigger);
+        switchLayoutButton.clicked.connect(this, &MainDrcButtonsFrame::OnLayoutSwithClick);
+        append(&switchLayoutButton);
 
         //! controls, the A/B/Y/+ actions are not discoverable otherwise. At the bottom:
         //! the top holds the page indicator, like in the Wii U Menu.

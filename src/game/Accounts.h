@@ -13,6 +13,7 @@ namespace Accounts {
         std::string name;            // Mii name, UTF-8
         std::vector<uint8_t> miiTga; // sanitized 32 bit TGA of the Mii, empty if unavailable
         bool isDefault = false;
+        bool isNetwork = false; // linked to an online account (NNID / PNID)
     };
 
     //! every account on the console, in slot order

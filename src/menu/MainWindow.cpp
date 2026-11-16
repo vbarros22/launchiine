@@ -82,13 +82,14 @@ void MainWindow::setupUserButton() {
     //! a framed tile with the Mii, like the user icon of the Wii U Menu
     userFrameData  = Resources::GetImageData("userFrame.png");
     userFrameImage = new GuiImage(userFrameData);
-    userButton     = new GuiButton(userFrameImage->getWidth(), userFrameImage->getHeight());
+    userFrameImage->setScale(1.0f / 1.5f); // 1.5x texture for 1080p
+    userButton = new GuiButton(userFrameImage->getWidth() / 1.5f, userFrameImage->getHeight() / 1.5f);
     userButton->setImage(userFrameImage);
     if (!account->miiTga.empty()) {
         userMiiData = new GuiImageData(account->miiTga.data(), account->miiTga.size(), GX2_TEX_CLAMP_MODE_MIRROR);
         if (userMiiData->getTexture()) {
             userMiiImage = new GuiImage(userMiiData);
-            userMiiImage->setScale(0.47f);
+            userMiiImage->setScale(0.68f);
             userMiiImage->setAlignment(ALIGN_CENTER | ALIGN_MIDDLE);
             userButton->setIcon(userMiiImage);
         }
@@ -106,6 +107,16 @@ void MainWindow::setupUserButton() {
     //! sit in the middle of the screen
     userFrame = new GuiFrame(width, height);
     userFrame->append(userButton);
+
+    //! like the Wii U Menu's badge for a linked online account (own design, not a network logo)
+    if (account->isNetwork) {
+        onlineBadgeData  = Resources::GetImageData("onlineBadge.png");
+        onlineBadgeImage = new GuiImage(onlineBadgeData);
+        onlineBadgeImage->setScale(1.0f / 1.5f);
+        onlineBadgeImage->setAlignment(ALIGN_LEFT | ALIGN_TOP);
+        onlineBadgeImage->setPosition(userButton->getOffsetX() + userButton->getWidth() - 30.0f, userButton->getOffsetY() + 6.0f);
+        userFrame->append(onlineBadgeImage);
+    }
     appendDrc(userFrame);
 }
 

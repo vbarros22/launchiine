@@ -77,6 +77,7 @@ std::vector<Accounts::Account> Accounts::list() {
         Account account;
         account.slot      = slot;
         account.isDefault = slot == defaultSlot;
+        account.isNetwork = nn::act::IsNetworkAccountEx(slot);
 
         int16_t name[nn::act::MiiNameSize + 1] = {};
         if (nn::act::GetMiiNameEx(name, slot).IsSuccess()) {

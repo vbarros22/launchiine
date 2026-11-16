@@ -264,6 +264,8 @@ private:
     GuiImage *userMiiImage           = nullptr;
     GuiImageData *userFrameData      = nullptr;
     GuiImage *userFrameImage         = nullptr;
+    GuiImageData *onlineBadgeData    = nullptr;
+    GuiImage *onlineBadgeImage       = nullptr;
     GuiTrigger userTouchTrigger{GuiTrigger::CHANNEL_1, GuiTrigger::VPAD_TOUCH};
     GuiTrigger userWpadTrigger{GuiTrigger::CHANNEL_2 | GuiTrigger::CHANNEL_3 | GuiTrigger::CHANNEL_4 | GuiTrigger::CHANNEL_5, GuiTrigger::BUTTON_A};
     GuiTrigger userXTrigger{GuiTrigger::CHANNEL_ALL, GuiTrigger::BUTTON_X, true};
