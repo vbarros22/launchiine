@@ -1,4 +1,4 @@
-## Launchiine (community continuation, v0.3 beta)
+## Launchiine (community continuation, v0.3.1 beta)
 
 A Wii U Menu replacement for [Aroma](https://aroma.foryour.cafe/), based on [launchiine by Maschell](https://github.com/wiiu-env/launchiine).
 The original was published as an unfinished work in progress; this fork picks it up and makes it usable day to day.
@@ -23,6 +23,10 @@ The original was published as an unfinished work in progress; this fork picks it
 - **TV view:** the selected game's cover, publisher, year, genre, players and official description
   from [GameTDB](https://www.gametdb.com) (console language, English where there is no translation).
   Downloaded once and kept on the SD card. ZR switches the TV back to the icon grid.
+  Homebrew, system apps and games without a cover show their icon.
+- **Switch screens** (X or the button top right), like the Wii U Menu: the icon grid on the TV and the game info
+  on the GamePad, for playing with a Pro Controller or Wii Remote. The choice is remembered.
+- The user's Mii in the top left corner, with a badge for accounts linked to an online network.
 
 **Works like a day-to-day menu**
 - **Stability:** fixed the random freezes and crashes (threading in the icon loader, GPU commands sent from a second thread,
@@ -34,7 +38,7 @@ The original was published as an unfinished work in progress; this fork picks it
   (needs the [homebrew_on_menu](https://github.com/wiiu-env/homebrew_on_menu_plugin) plugin, included in Aroma).
 - **Search** (+ button): matches words in the short and the full name, ignores case, accents and punctuation,
   also finds titles inside folders.
-- **Accounts (experimental):** the current user's Mii in the corner, X opens the user picker, asks at boot without a default account.
+- **Accounts (experimental):** tap the Mii or press - to choose the user; asks at boot without a default account.
 - **Game update notice:** titles with a newer update on Nintendo's servers get an orange badge and *Update available*.
 - **Fast start:** names and icons are cached on the SD card; the menu is complete in well under a second.
 - The menu opens on the last started title (inside its folder if needed).
@@ -90,7 +94,8 @@ Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
 - The GamePad's Quick Start Menu and external storage handling rely on Aroma's [AutobootModule](https://github.com/wiiu-env/AutobootModule)
   (use a 2024 or newer Aroma, older versions had problems with the Quick Start Menu).
 - No Wara Wara Plaza; the TV shows the selected game's info instead.
-- Some games have no cover or description on GameTDB, especially eShop titles.
+- Some games have no cover or description on GameTDB, especially eShop titles. Virtual Console injects
+  are looked up by name in GameTDB's Wii / GameCube database, which does not find all of them yet.
 - No menu music or splash sound from the original menu.
 - Leaving System Settings or Wii titles reboots the system and Aroma has to load again; that takes a moment, like with the original menu.
 
