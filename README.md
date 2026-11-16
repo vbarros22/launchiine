@@ -7,11 +7,11 @@ The original was published as an unfinished work in progress; this fork picks it
 > Nothing is written to the NAND: deleting `men.rpx` from the SD card brings back the original Wii U Menu.
 
 ### Screenshots
-| Main grid with the System and Homebrew folders | Homebrew folder |
+| Main grid (GamePad) | Inside a folder |
 |---|---|
-| ![Main grid](docs/screenshots/main-grid.jpg) | ![Homebrew folder](docs/screenshots/homebrew-folder.jpg) |
-| **Search ("zelda")** | **Alphabetical order, page arrows** |
-| ![Search](docs/screenshots/search.jpg) | ![Games](docs/screenshots/games.jpg) |
+| ![Main grid](docs/screenshots/main-grid.jpg) | ![Inside a folder](docs/screenshots/folder.jpg) |
+| **Moving a title** | **TV: cover and description from GameTDB** |
+| ![Move dialog](docs/screenshots/dialog.jpg) | ![TV view with GameTDB info](docs/screenshots/tv.jpg) |
 
 ### What changed compared to the original
 **Looks like the Wii U Menu** (all graphics are new drawings, no Nintendo files are included)
