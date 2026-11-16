@@ -270,9 +270,10 @@ void MainWindow::process() {
         inputCooldown--;
     }
 
-    //! GameTDB info for the TV once all titles (and their product codes) are known
-    if (!gameDbStarted && titleLoader.valid() && titleLoader.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        if (++loaderDoneFrames > 30) {
+    //! GameTDB info for the TV once all titles (and their product codes) are known: after the
+    //! first loading pass, not after the whole loader (its background checks take ~30 s)
+    if (!gameDbStarted && gameList.isFirstPassDone()) {
+        if (++loaderDoneFrames > 10) { // let the events of the first pass reach the list
             gameDbStarted = true;
             std::vector<std::string> ids;
             gameList.lock();

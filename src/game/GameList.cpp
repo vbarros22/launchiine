@@ -630,6 +630,7 @@ void GameList::loadTitleDetails(uint64_t priorityTitleId) {
     DEBUG_FUNCTION_LINE("Icons done: %d titles in %lld ms (names %lld ms, icons %lld ms), %u icons (%u from the cache), %u cached names", (int) jobs.size(),
                         OSTicksToMilliseconds(OSGetTime() - start), OSTicksToMilliseconds(nameTicks),
                         OSTicksToMilliseconds(iconTicks), iconsOk, iconCacheHits, cached);
+    firstPassDone = true;
 
     //! first run or new titles: save right away, so the next boot is fast even if a game is
     //! launched before the background checks below are done

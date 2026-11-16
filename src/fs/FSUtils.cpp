@@ -37,7 +37,8 @@ int32_t FSUtils::LoadFileToMem(const char *filepath, uint8_t **inbuffer, uint32_
         return -2;
     }
 
-    uint32_t blocksize = 0x4000;
+    //! large reads: every read is a round trip to the file system (a 600 KB cover took ~40)
+    uint32_t blocksize = 0x100000;
     uint32_t done      = 0;
     int32_t readBytes  = 0;
 

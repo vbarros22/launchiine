@@ -57,6 +57,11 @@ static inline std::string metaDirectoryFor(const gameInfo *info) {
  */
 class GameList {
 public:
+    //! true once the first loading pass is through (names and icons from the caches)
+    bool isFirstPassDone() const {
+        return firstPassDone;
+    }
+
     GameList();
 
     ~GameList();
@@ -182,6 +187,7 @@ protected:
     std::deque<PendingEvent> renderQueue;
 
     std::atomic<bool> stopAsyncLoading{false};
+    std::atomic<bool> firstPassDone{false}; // every title has its (cached) name, product code and icon
     std::atomic<bool> pausedLoading{false};
 
     //! loader thread: wait while paused, returns false when stopped

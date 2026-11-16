@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <coreinit/time.h>
 #include <coreinit/userconfig.h>
 #include <cstdlib>
 #include <cstring>
@@ -601,7 +602,11 @@ namespace {
                 }
             }
 
+            OSTime loadStart                     = OSGetTime();
             std::shared_ptr<GameDb::Cover> cover = loadCover(coverFile(id));
+            if (cover != nullptr) {
+                DEBUG_FUNCTION_LINE("Cover %s from the SD card in %lld ms", id.c_str(), OSTicksToMilliseconds(OSGetTime() - loadStart));
+            }
             if (cover == nullptr && !networkFailed) {
                 std::string tdbId = id;
                 {
