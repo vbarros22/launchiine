@@ -54,6 +54,10 @@ Development builds of every commit are available as the `men-rpx` artifact in th
 
 To go back to the original menu, delete (or rename) `men.rpx`.
 
+### Tested on
+- Wii U with the latest system update, latest Aroma (November 2026), games on internal memory and USB.
+- Works together with [Pretendo Network](https://pretendo.network) / Inkay.
+
 ### Controls
 | Button | Action |
 |---|---|

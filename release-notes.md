@@ -29,6 +29,8 @@ Extract the `launchiine-*.zip` of this release to the root of the SD card (or co
 - Updates are only announced, not downloaded.
 - Quick Start Menu and external storage handling rely on Aroma's AutobootModule.
 
+Tested on a Wii U with the latest system update and the latest Aroma (November 2026), also together with Pretendo Network / Inkay.
+
 Please report problems with the network log attached – see the README for a one-line log receiver.
 
 *Developed with AI assistance (Claude by Anthropic) and tested on a real console.*
