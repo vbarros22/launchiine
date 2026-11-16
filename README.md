@@ -12,6 +12,8 @@ The original was published as an unfinished work in progress; this fork picks it
 | ![Main grid](docs/screenshots/main-grid.jpg) | ![Inside a folder](docs/screenshots/folder.jpg) |
 | **Moving a title** | **TV: cover and description from GameTDB** |
 | ![Move dialog](docs/screenshots/dialog.jpg) | ![TV view with GameTDB info](docs/screenshots/tv.jpg) |
+| **TV: homebrew and apps show their icon** | |
+| ![TV view with an icon](docs/screenshots/tv-icon.jpg) | |
 
 ### What changed compared to the original
 **Looks like the Wii U Menu** (all graphics are new drawings, no Nintendo files are included)
