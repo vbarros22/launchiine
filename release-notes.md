@@ -12,6 +12,7 @@ Extract the `launchiine-*.zip` of this release to the root of the SD card (or co
 - Folders: grid icon with the folder name, the folder color tints the background inside, bottom bar with the name, a wrench (folder settings) and a back tab.
 - Dialogs in the Wii U Menu style: white panel, dark header, glossy buttons, *Back* button.
 - The TV is rendered at the console's resolution (1080p when set) instead of a stretched 720p picture.
+- **TV view:** cover, publisher, year, genre, players and official description of the selected game from GameTDB, cached on the SD card. ZR switches back to the icon grid.
 
 **Features**
 - **User folders:** Y on a title → *New folder...*, move titles between folders, rename and delete folders; empty folders disappear.
@@ -24,7 +25,7 @@ Extract the `launchiine-*.zip` of this release to the root of the SD card (or co
 
 ### Known limitations
 - No splash screen sound, no menu music from the original menu.
-- No Wara Wara Plaza; the TV mirrors the grid.
+- No Wara Wara Plaza. Some games have no cover or description on GameTDB.
 - Updates are only announced, not downloaded.
 - Quick Start Menu and external storage handling rely on Aroma's AutobootModule.
 

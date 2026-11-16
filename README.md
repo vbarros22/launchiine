@@ -20,6 +20,9 @@ The original was published as an unfinished work in progress; this fork picks it
 - Folders with a grid icon and their name, a colored background inside, name bar, folder settings (wrench) and back tab.
 - Dialogs with a white panel, dark header and glossy buttons.
 - The TV is rendered at the console resolution (1080p when set).
+- **TV view:** the selected game's cover, publisher, year, genre, players and official description
+  from [GameTDB](https://www.gametdb.com) (console language, English where there is no translation).
+  Downloaded once and kept on the SD card. ZR switches the TV back to the icon grid.
 
 **Works like a day-to-day menu**
 - **Stability:** fixed the random freezes and crashes (threading in the icon loader, GPU commands sent from a second thread,
@@ -62,6 +65,7 @@ To go back to the original menu, delete (or rename) `men.rpx`.
 | X (or tap the Mii) | Choose the user |
 | L / R | Previous / next page |
 | ZL | System Settings / original Wii U Menu |
+| ZR | TV: game info or icon grid |
 
 ### Files on the SD card
 Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
@@ -71,12 +75,17 @@ Everything lives in `sd:/wiiu/launchiine/` and can be deleted at any time:
 - `lastTitle.txt` – last started title
 - `folders.txt` – your folders, their colors and which titles were moved
 - `restore-men.txt` – only exists for a moment while the original Wii U Menu starts
+- `gamedb2.txt` – GameTDB info of your games (rebuilt automatically)
+- `covers/` – downloaded covers (about 600 KB each)
+- `wiiutdb.zip` – optional: the GameTDB database copied by hand, if the console cannot download it
 
 ### Known limitations
 - Account switching has only been tested with a single account.
 - Updates are only announced; download them through the original menu or System Settings.
-- Quick Start Menu and external storage handling rely on Aroma's [AutobootModule](https://github.com/wiiu-env/AutobootModule).
-- No Wara Wara Plaza / TV view; the TV mirrors the grid.
+- The GamePad's Quick Start Menu and external storage handling rely on Aroma's [AutobootModule](https://github.com/wiiu-env/AutobootModule)
+  (use a 2024 or newer Aroma, older versions had problems with the Quick Start Menu).
+- No Wara Wara Plaza; the TV shows the selected game's info instead.
+- Some games have no cover or description on GameTDB, especially eShop titles.
 - No menu music or splash sound from the original menu.
 - Leaving System Settings or Wii titles reboots the system and Aroma has to load again; that takes a moment, like with the original menu.
 
